@@ -1,10 +1,26 @@
 using JuMP, CPLEX, LinearAlgebra
 
 file_path = "tests/data/test_perso.vrp"  # Replace with your instance file path
-name, comment, capacity, n, coords, demands, depot, distances = parse_cvrp_instance(file_path)
+#name, comment, capacity, n, coords, demands, depot, distances = parse_cvrp_instance(file_path)
 
-T = 3
-IT = rand(0:10, n)
+
+include("data/real_data.vrp")
+
+println("n = $n")
+println("t = $t")
+println("th = $th")
+println("T = $T")
+println("d = $d")
+println("C = $C")
+
+#T = 1
+#IT = rand(0:10, n)
+IT = th
+demands = d
+distances = t
+capacity = C
+
+
 
 # Generate a matrix of size n x n with random integers between 0 and 100
 matrix = rand(0:10, n, n)
@@ -203,7 +219,7 @@ else
     println("No optimal solution found.")
 end
 
-#= # Create the model_d
+# Create the model_d
 model_d = Model(CPLEX.Optimizer)
 #set_optimizer_attribute(model_d, "TimeLimit", 5)
 
@@ -289,4 +305,4 @@ if termination_status(model_d) == MOI.OPTIMAL
 
 else
     println("No optimal solution found.")
-end =#
+end 
