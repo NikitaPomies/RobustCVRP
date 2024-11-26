@@ -31,7 +31,6 @@ model_p = Model(CPLEX.Optimizer)
 
 @constraint(model_p, sum(delta_1[i, j] for j in 1:n for i in 1:n) <=T)  
 @constraint(model_p, sum(delta_2[i, j] for j in 1:n for i in 1:n) <=T*T)  
-@constraint(model_p, sum(delta_2[i, j] for j in 1:n for i in 1:n) <=T*T)  
 
 
 
