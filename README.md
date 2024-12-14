@@ -1,4 +1,4 @@
-A ce stade le repo contient la modélisation papier attendu pour le rendu du 15 décembre et un fichier tests contenant 
+A ce stade le repo contient la modélisation papier attendue pour le rendu du 15 décembre et un fichier tests contenant 
 des scripts julia nous ayant permis de vérifier nos modélisations du RCVRP. 
 
 (Vérification de la modélisation statique avec une instance CVRPLIB et nous avons également testé 
