@@ -4,7 +4,7 @@ import CPLEX
 import Random
 using Plots
 
-function generate_distance_matrix(n; random_seed = 1)
+function generate_distance_matrix(n; random_seed = 6)
     rng = Random.MersenneTwister(random_seed)
     X = 100 * rand(rng, n)
     Y = 100 * rand(rng, n)
@@ -13,17 +13,19 @@ function generate_distance_matrix(n; random_seed = 1)
     return X, Y, d , prices 
 end
 
-n = 100
+n = 20
 X, Y, d, prices = generate_distance_matrix(n)
-
+println(prices)
 
 
 function build_tsp_model(d, n)
     model = Model(CPLEX.Optimizer)
     @variable(model, x[1:n, 1:n], Bin, Symmetric)
-    @objective(model, Min, sum(d .* x) / 2)
-    @constraint(model, [i in 1:n], sum(x[i, :]) == 2)
+    @variable(model, z[1:n], Bin)
+    @objective(model, Max, sum(prices .* z) - sum(d .* x) / 2)
+    @constraint(model, [i in 1:n], sum(x[i, :]) == 2*z[i])
     @constraint(model, [i in 1:n], x[i, i] == 0)
+    @constraint(model,z[1]==1) # En foncuton du prix associé au dépot, il faut forcer le pasage par le dépot 
     return model
 end
 
@@ -31,11 +33,18 @@ function selected_edges(x::Matrix{Float64}, n)
     return Tuple{Int,Int}[(i, j) for i in 1:n, j in 1:n if x[i, j] > 0.5]
 end
 
-subtour(x::Matrix{Float64}) = subtour(selected_edges(x, size(x, 1)), size(x, 1))
-subtour(x::AbstractMatrix{VariableRef}) = subtour(value.(x))
+function subtour(x::Matrix{Float64}, z::Vector{Float64}) 
+    return subtour(selected_edges(x, size(x, 1)), size(x, 1), z)
+end
 
-function subtour(edges::Vector{Tuple{Int,Int}}, n)
-    shortest_subtour, unvisited = collect(1:n), Set(collect(1:n))
+subtour(x::AbstractMatrix{VariableRef}, z::Vector{VariableRef}) = subtour(value.(x), value.(z))
+
+function subtour(edges::Vector{Tuple{Int,Int}}, n, z::Vector{Float64})
+    selected = Set([i for i in 1:n if z[i] > 0.5])
+    
+    shortest_subtour = collect(selected)  # Initialize with all selected nodes
+    unvisited = copy(selected)  # Start with selected nodes only
+
     while !isempty(unvisited)
         this_cycle, neighbors = Int[], unvisited
         while !isempty(neighbors)
@@ -62,19 +71,26 @@ lazy_model = build_tsp_model(d, n)
 function subtour_elimination_callback(cb_data)
     status = callback_node_status(cb_data, lazy_model)
     if status != MOI.CALLBACK_NODE_STATUS_INTEGER
-        return  # Only run at integer solutions
+        return
     end
-    cycle = subtour(callback_value.(cb_data, lazy_model[:x]))
-    if !(1 < length(cycle) < n)
-        return  # Only add a constraint if there is a cycle
+    
+    x_val = callback_value.(cb_data, lazy_model[:x])
+    y_val = callback_value.(cb_data, lazy_model[:z])
+    
+    cycle = subtour(x_val, y_val)
+    selected_count = sum(y_val)
+    
+    if !(1 < length(cycle) < selected_count)
+        return
     end
+    
     S = [(i, j) for (i, j) in Iterators.product(cycle, cycle) if i < j]
     con = @build_constraint(
-        sum(lazy_model[:x][i, j] for (i, j) in S) <= length(cycle) - 1,
+        sum(lazy_model[:x][i, j] for (i, j) in S) <= length(cycle) - 1
     )
     MOI.submit(lazy_model, MOI.LazyConstraint(cb_data), con)
-    return
 end
+
 set_attribute(
     lazy_model,
     MOI.LazyConstraintCallback(),
@@ -105,7 +121,8 @@ function plot_tour(X, Y, x)
     for i in 1:length(X)
         # Annotate with node numbers
         # offset the text slightly above the point for better visibility
-        Plots.annotate!(X[i], Y[i]+1, Plots.text("$i", :black, :center, 8))
+        price = prices[i]
+        Plots.annotate!(X[i], Y[i]+1, Plots.text("$i price $price", :black, :center, 8))
     end
     
     # Highlight depot (node 1) differently
