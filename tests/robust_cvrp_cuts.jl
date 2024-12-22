@@ -61,6 +61,66 @@ function solve_subproblem(x_bar)
         delta_2_opt=value.(delta_2))
 end
 
+function selected_edges(x::Matrix{Float64}, n)
+    return Tuple{Int,Int}[(i, j) for i in 1:n, j in 1:n if x[i, j] > 0.5]
+end
+
+function solve_subproblem_bis(x_bar)
+    n = length(demands)
+
+    selected_e = selected_edges(x_bar, length(demands))
+    sort!(selected_e, by=x->distances[x[1],x[2]] * (IT[x[1]] + IT[x[2]]), rev=true)
+
+    delta_1 = zeros(n, n)
+
+    S1 = 0
+    for (i, j) in selected_e
+        if S1 + 1 <= T
+            # Can take full item
+            delta_1[i, j] = 1.0
+            S1 += 1.0
+        else
+            # Take fractional part
+            remaining = T - S1
+            if remaining > 0
+                delta_1[i, j] = remaining
+                S1 += remaining
+            end
+            break  # We've reached T, no need to continue
+        end
+    end
+
+    sort!(selected_e, by=x->distances[x[1],x[2]] * (IT[x[1]] * IT[x[2]]), rev=true)
+
+    delta_2 = zeros(n, n)
+
+    S2 = 0
+    for (i, j) in selected_e
+        if S2 + 2 <= T*T
+            # Can take full item
+            delta_2[i, j] = 2.0
+            S2 += 2.0
+        else
+            # Take fractional part
+            remaining = T*T - S2
+            if remaining > 0
+                delta_2[i, j] = remaining
+                S2 += remaining
+            end
+            break  # We've reached T, no need to continue
+        end
+    end
+    obj = sum((distances[i, j] + delta_1[i, j] * (IT[i] + IT[j]) + delta_2[i, j] * (IT[i] * IT[j])) * x_bar[i, j] for i in 1:n, j in 1:n if i != j)
+    return (obj=obj, delta_1_opt=delta_1,
+    delta_2_opt=delta_2)
+
+
+
+
+
+
+end
+
 
 
 
@@ -283,14 +343,14 @@ end
 @constraint(model_d, sum(x[1, j] for j in 2:n) == 2)  # 8 vehicles leave the depot
 @constraint(model_d, sum(x[i, 1] for i in 2:n) == 2)  # 8 vehicles return to the depot
 
-@objective(model_d, Min, sum(distances[i, j] * x[i, j] for i in 1:n, j in 1:n if i != j) + 
-lambda_1 * T + lambda_2 * T * T + sum(mu_1[i, j] + 2 * mu_2[i, j] for i in 1:n for j in 1:n if i != j)) 
+@objective(model_d, Min, sum(distances[i, j] * x[i, j] for i in 1:n, j in 1:n if i != j) +
+                         lambda_1 * T + lambda_2 * T * T + sum(mu_1[i, j] + 2 * mu_2[i, j] for i in 1:n for j in 1:n if i != j))
 #@objective(model_d, Min, sum(distances[i, j] * x[i, j] for i in 1:n, j in 1:n if i != j))
 
 for i in 1:n
-    @constraint(model_d,x[i,i]==0)
-    @constraint(model_d,mu_1[i,i]==0)
-    @constraint(model_d,mu_2[i,i]==0)
+    @constraint(model_d, x[i, i] == 0)
+    @constraint(model_d, mu_1[i, i] == 0)
+    @constraint(model_d, mu_2[i, i] == 0)
 end
 
 optimize!(model_d)
@@ -305,4 +365,4 @@ if termination_status(model_d) == MOI.OPTIMAL
 
 else
     println("No optimal solution found.")
-end 
+end
