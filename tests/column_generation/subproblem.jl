@@ -1,0 +1,203 @@
+
+using JuMP
+import CPLEX
+import Random
+using Plots
+
+function generate_distance_matrix(n; random_seed=2)
+    rng = Random.MersenneTwister(random_seed)
+    X = 100 * rand(rng, n)
+    Y = 100 * rand(rng, n)
+    prices = 100 * rand(rng, n)
+    demands = 10 * rand(rng, n)
+    d = [sqrt((X[i] - X[j])^2 + (Y[i] - Y[j])^2) for i in 1:n, j in 1:n]
+    return X, Y, d, prices, demands
+end
+
+n = 20
+X, Y, d, prices, demands = generate_distance_matrix(n)
+capacity = 60
+
+
+function build_tsp_model(demandes, capa, n)
+    model = Model(CPLEX.Optimizer)
+    @variable(model, x[1:n, 1:n], Bin, Symmetric)
+    @variable(model, z[1:n], Bin)
+    @constraint(model, [i in 1:n], sum(x[i, :]) == 2 * z[i])
+    @constraint(model, [i in 1:n], x[i, i] == 0)
+    @constraint(model, z[1] == 1) # En foncuton du prix associé au dépot, il faut forcer le pasage par le dépot 
+    @constraint(model, sum(demandes .* z) <= capa)
+    return model
+end
+
+
+
+function selected_edges(x::Matrix{Float64}, n)
+    return Tuple{Int,Int}[(i, j) for i in 1:n, j in 1:n if x[i, j] > 0.5]
+end
+
+function subtour(x::Matrix{Float64}, z::Vector{Float64})
+    return subtour(selected_edges(x, size(x, 1)), size(x, 1), z)
+end
+
+subtour(x::AbstractMatrix{VariableRef}, z::Vector{VariableRef}) = subtour(value.(x), value.(z))
+
+function subtour(edges::Vector{Tuple{Int,Int}}, n, z::Vector{Float64})
+    selected = Set([i for i in 1:n if z[i] > 0.5])
+
+    shortest_subtour = collect(selected)  # Initialize with all selected nodes
+    unvisited = copy(selected)  # Start with selected nodes only
+
+    while !isempty(unvisited)
+        this_cycle, neighbors = Int[], unvisited
+        while !isempty(neighbors)
+            current = pop!(neighbors)
+            push!(this_cycle, current)
+            if length(this_cycle) > 1
+                pop!(unvisited, current)
+            end
+            neighbors =
+                [j for (i, j) in edges if i == current && j in unvisited]
+        end
+        if length(this_cycle) < length(shortest_subtour)
+            shortest_subtour = this_cycle
+        end
+    end
+    return shortest_subtour
+end
+
+lazy_model = build_tsp_model(demands, capacity, n)
+
+function subtour_elimination_callback(cb_data, model)
+    status = callback_node_status(cb_data, model)
+    if status != MOI.CALLBACK_NODE_STATUS_INTEGER
+        return
+    end
+    
+    x_val = callback_value.(cb_data, model[:x])
+    y_val = callback_value.(cb_data, model[:z])
+    cycle = subtour(x_val, y_val)
+    selected_count = sum(y_val)
+    
+    if !(1 < length(cycle) < selected_count)
+        return
+    end
+    
+    S = [(i, j) for (i, j) in Iterators.product(cycle, cycle) if i < j]
+    con = @build_constraint(
+        sum(model[:x][i, j] for (i, j) in S) <= length(cycle) - 1
+    )
+    MOI.submit(model, MOI.LazyConstraint(cb_data), con)
+end
+
+
+function subtour_elimination_callback(cb_data)
+    status = callback_node_status(cb_data, lazy_model)
+    if status != MOI.CALLBACK_NODE_STATUS_INTEGER
+        return
+    end
+
+    x_val = callback_value.(cb_data, lazy_model[:x])
+    y_val = callback_value.(cb_data, lazy_model[:z])
+
+    cycle = subtour(x_val, y_val)
+    selected_count = sum(y_val)
+
+    if !(1 < length(cycle) < selected_count)
+        return
+    end
+
+    S = [(i, j) for (i, j) in Iterators.product(cycle, cycle) if i < j]
+    con = @build_constraint(
+        sum(lazy_model[:x][i, j] for (i, j) in S) <= length(cycle) - 1
+    )
+    MOI.submit(lazy_model, MOI.LazyConstraint(cb_data), con)
+end
+
+set_attribute(
+    lazy_model,
+    MOI.LazyConstraintCallback(),
+    subtour_elimination_callback,
+)
+
+function solvepctsp(prices::Vector{T}, model::Model) where {T<:Real}
+    
+    @objective(model, Min, -sum(prices .* model[:z]) + sum(d .* model[:x]) / 2)
+    optimize!(model)
+end
+
+function get_route(x::Matrix{Float64}, z::Vector{Float64})
+    n = size(x, 1)
+    selected = [i for i in 1:n if ((z[i] > 0.5) && (i!=1))]
+    route = [1]  # Start from depot
+    current = 1
+
+    
+    while length(route) <= length(selected) +1
+        # Find next node in route
+        next_found = false
+        for j in selected
+            if !( j in route) && x[current, j] > 0.5
+                push!(route, j)
+                current = j
+                next_found = true
+                break
+            end
+        end
+        
+        # If no next node found (means we're returning to depot)
+        # and we haven't visited all selected nodes, start from depot again
+        if !next_found 
+            push!(route,1)
+            break
+        end
+    end
+    
+    return route
+end
+
+
+solvepctsp(prices, lazy_model)
+
+function plot_tour(X, Y, x)
+    # Create empty plot
+    plot = Plots.plot(size=(800, 600))
+
+    # Plot the edges (routes)
+    for (i, j) in selected_edges(x, size(x, 1))
+        Plots.plot!([X[i], X[j]], [Y[i], Y[j]],
+            color=:blue,
+            linewidth=2,
+            legend=false)
+    end
+
+    # Plot the nodes
+    Plots.scatter!(X, Y,
+        color=:red,
+        markersize=8,
+        legend=false)
+
+    # Add node numbers
+    for i in 1:length(X)
+        # Annotate with node numbers
+        # offset the text slightly above the point for better visibility
+        price = prices[i]
+        Plots.annotate!(X[i], Y[i] + 1, Plots.text("$i price $price", :black, :center, 8))
+    end
+
+    # Highlight depot (node 1) differently
+    Plots.scatter!([X[1]], [Y[1]],
+        color=:green,
+        markersize=10,
+        legend=false)
+
+    # Set axis labels
+    xlabel!("X Coordinate")
+    ylabel!("Y Coordinate")
+    title!("CVRP Solution with Node Numbers")
+
+    return plot
+end
+
+get_route(value.(lazy_model[:x]),value.(lazy_model[:z]))
+plot_tour(X, Y, value.(lazy_model[:x]))
