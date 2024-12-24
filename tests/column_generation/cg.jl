@@ -1,6 +1,6 @@
 using JuMP, CPLEX, LinearAlgebra
 
-file_path = "../data/P-n40-k5.vrp"  # Replace with your instance file path
+file_path = "../data/P-n20-k2.vrp"  # Replace with your instance file path
 
 name, comment, capacity, n, coords, demands, depot, distances = parse_cvrp_instance(file_path)
 
@@ -9,9 +9,34 @@ demands = [demands[j] for j in 1:n]
 
 ##Construct initial routes
 
-routes = nearest_neighbor_routes(distances, demands, capacity)
+#routes = nearest_neighbor_routes(distances, demands, capacity)
 
-#Define restricted master problem
+routes = init_column_pool(distances, demands, capacity, 200)
+#println(routes)
+
+#= test = 0
+for route in routes
+    cost = compute_route_cost(route, distances)
+    global test += cost
+
+end
+println(test)
+
+test = 0
+
+for route in routes
+    println("Changing new route")
+    println(route)
+    cost = compute_route_cost(route,distances)
+    println(cost)
+    new_route = lkh_two_opt(route,distances)
+    println(new_route)
+    new_cost = compute_route_cost(new_route,distances)
+    println(new_cost)
+    
+
+end =#
+ #Define restricted master problem
 
 rmasterpb = Model(CPLEX.Optimizer)
 
@@ -22,7 +47,7 @@ R = length(routes)
 @constraint(rmasterpb, c[i = 2:n], sum(x[r] for r in 1:R if i in routes[r]) >= 1)
 
 
-@constraint(rmasterpb, con, sum(x) == 5) # nombre max de véhicules
+@constraint(rmasterpb, con, sum(x) <= 5) # nombre max de véhicules
 
 @objective(rmasterpb, Min, sum(compute_route_cost(routes[r], distances) * x[r] for r in 1:R))
 
@@ -40,7 +65,7 @@ MAXIMUM_ITERATIONS = 100
 optimize!(rmasterpb)
 
 @assert is_solved_and_feasible(rmasterpb)
-println("Routes : ",routes)
+#println("Routes : ",routes)
 println(value.(rmasterpb[:x]))
 
 
@@ -61,14 +86,16 @@ for k in 1:200
     for i in 2:n
         prices[i] = dual(c[i])
     end
-    println(prices)
+    #println(prices)
     set_silent(submodel)
     solvepctsp(prices, submodel,distances)
     println("valeur pctsp ",objective_value(submodel))
+    
     #println(prices)
     route = get_route(value.(submodel[:x]), value.(submodel[:z]))
     if route in routes
         println("duplicate_routes")
+        #break
         continue
     end
     route_cost = compute_route_cost(route,distances)
@@ -76,7 +103,6 @@ for k in 1:200
     push!(routes, route)
     push!(x, @variable(rmasterpb, lower_bound = 0))
     set_objective_coefficient(rmasterpb, x[end], route_cost)
-
     for i in 2:n
         if i in route
             # Get the constraint for customer i
@@ -92,38 +118,6 @@ for k in 1:200
     #println(value.(rmasterpb[:x]))
 
 
-
-    #break
-    #print_iteration(k, lower_bound, upper_bound, gap)
-    #=   if gap < ABSOLUTE_OPTIMALITY_GAP
-          println("Terminating with the optimal solution")
-          break
-      end =#
-    #println(lower_bound - ret.obj)
-
-    #println(ret.delta_1_opt)
-    #println(ret.delta_2_opt)
-    #= if lower_bound >= ret.obj
-        break
-    end =#
-
-
-
-
-    #cut = @constraint(model, sum(new_distances[i, j] * x[i, j] for i in 1:n, j in 1:n if i != j) <= z)
-
-    #=  set_silent(model)
-     optimize!(model)
-     x_k = value.(x) =#
-
-
-
-    #cut = @constraint(model, sum((distances[i, j] *10) * x[i, j] for i in 1:n, j in 1:n if i != j) <= z)
-
-
-
-    #@constraint(model,z >= 300)
-    #@info "Adding the cut $(cut)"
 
 end
 
@@ -153,4 +147,4 @@ println(objective_value(rmasterpb))
 
 
 
-
+ 

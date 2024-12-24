@@ -42,49 +42,49 @@ function nearest_neighbor_routes(
 
         # Return to depot
         push!(current_route, 1)
-#=         println( current_route)
-        indices = 2:length(current_route)-1  # Indices of the middle elements
-        middle_elements = current_route[indices]  # Extract the middle elements
-        shuffle!(middle_elements)  # Shuffle the middle elements
-        current_route[indices] .= middle_elements 
-        println(current_route) =#
+        #=         println( current_route)
+                indices = 2:length(current_route)-1  # Indices of the middle elements
+                middle_elements = current_route[indices]  # Extract the middle elements
+                shuffle!(middle_elements)  # Shuffle the middle elements
+                current_route[indices] .= middle_elements 
+                println(current_route) =#
         push!(routes, current_route)
     end
 
-      # Generate random routes
+    # Generate random routes
     #routes = Vector{Vector{Int}}()
     num_random_routes = 500
-      for _ in 1:num_random_routes
-          unvisited = Set(2:n_customers)  # Reset unvisited customers
-  
-          while !isempty(unvisited)
-              current_route = [1]  # Start at depot
-              current_load = 0.0
-  
-              while !isempty(unvisited)
-                  # Random route generation
-                  feasible_customers = [c for c in unvisited if current_load + demands[c] <= capacity]
-  
-                  if isempty(feasible_customers)
-                      break
-                  end
-  
-                  # Select a random customer from the feasible list
-                  random_customer = rand(feasible_customers)
-  
-                  # Add customer to route
-                  push!(current_route, random_customer)
-                  current_load += demands[random_customer]
-                  delete!(unvisited, random_customer)
-              end
-  
-              # Return to depot
-              push!(current_route, 1)
-              push!(routes, current_route)
-          end
-      end
-  
-     
+    for _ in 1:num_random_routes
+        unvisited = Set(2:n_customers)  # Reset unvisited customers
+
+        while !isempty(unvisited)
+            current_route = [1]  # Start at depot
+            current_load = 0.0
+
+            while !isempty(unvisited)
+                # Random route generation
+                feasible_customers = [c for c in unvisited if current_load + demands[c] <= capacity]
+
+                if isempty(feasible_customers)
+                    break
+                end
+
+                # Select a random customer from the feasible list
+                random_customer = rand(feasible_customers)
+
+                # Add customer to route
+                push!(current_route, random_customer)
+                current_load += demands[random_customer]
+                delete!(unvisited, random_customer)
+            end
+
+            # Return to depot
+            push!(current_route, 1)
+            push!(routes, current_route)
+        end
+    end
+
+
 
     return routes
 end
@@ -93,8 +93,94 @@ end
 function compute_route_cost(route::Vector{T1}, distances::Matrix{Float64}) where {T1<:Real}
     S = 0
     for i in 1:length(route)-1
-        u,v = route[i], route[i + 1]
+        u, v = route[i], route[i+1]
         S += distances[u, v]
     end
     return S
 end
+
+function calculate_tour_length(tour, distances)
+    n = length(tour)
+    return sum(distances[tour[i], tour[i+1]] for i in 1:n-1)
+end
+
+function two_opt_swap!(tour, i, j)
+    reverse!(@view tour[i:j])
+    return tour
+end
+
+function lkh_two_opt(route, distances)
+    current_tour = copy(route)
+    improved = true
+    max_iterations = 100
+    iterations = 0
+
+    while improved && iterations < max_iterations
+        improved = false
+        current_length = calculate_tour_length(current_tour, distances)
+
+        for i in 2:length(current_tour)-1
+            for j in i+1:length(current_tour)-1
+                new_tour = copy(current_tour)
+                two_opt_swap!(new_tour, i, j)
+                new_length = calculate_tour_length(new_tour, distances)
+
+                if new_length < current_length
+                    current_tour = new_tour
+                    current_length = new_length
+                    improved = true
+                    break
+                end
+            end
+            improved && break
+        end
+        iterations += 1
+    end
+
+    return current_tour
+end
+
+
+function init_column_pool(
+    distances::Matrix{T1},
+    demands::Vector{T2},
+    capacity::T3,
+    n::Int
+) where {T1<:Real,T2<:Real,T3<:Real}
+    n_customers = length(demands)
+    unvisited = [i for i in 2:n_customers]
+    routes = Vector{Vector{Int}}()
+
+
+    for i in 1:n
+        shuffle!(unvisited)
+
+        num_visited_clients = 0
+        customer_idx = 1
+
+        while num_visited_clients < n_customers - 1
+            current_route = [1]  # Start at depot
+            current_load = 0.0
+
+            while (customer_idx <= length(unvisited)) && (current_load + demands[unvisited[customer_idx]] <= capacity)
+                next_customer = unvisited[customer_idx]
+                push!(current_route, next_customer)
+                current_load += demands[next_customer]
+                customer_idx += 1
+                num_visited_clients += 1
+            end
+            push!(current_route, 1)
+
+            # optimize the route here 
+            current_route = lkh_two_opt(current_route, distances)
+            push!(routes, current_route)
+
+        end
+    end
+
+
+
+    return routes
+end
+
+
