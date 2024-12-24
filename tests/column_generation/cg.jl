@@ -1,6 +1,6 @@
 using JuMP, CPLEX, LinearAlgebra
 
-file_path = "../data/P-n20-k2.vrp"  # Replace with your instance file path
+file_path = "../data/P-n40-k5.vrp"  # Replace with your instance file path
 
 name, comment, capacity, n, coords, demands, depot, distances = parse_cvrp_instance(file_path)
 
@@ -19,10 +19,10 @@ R = length(routes)
 @variable(rmasterpb, x[1:R]>=0)
 
 
-@constraint(rmasterpb, c[i = 1:n], sum(x[r] for r in 1:R if i in routes[r]) >= 1)
+@constraint(rmasterpb, c[i = 2:n], sum(x[r] for r in 1:R if i in routes[r]) >= 1)
 
 
-@constraint(rmasterpb, con, sum(x) <= 5) # nombre max de véhicules
+@constraint(rmasterpb, con, sum(x) == 5) # nombre max de véhicules
 
 @objective(rmasterpb, Min, sum(compute_route_cost(routes[r], distances) * x[r] for r in 1:R))
 
@@ -44,7 +44,7 @@ println("Routes : ",routes)
 println(value.(rmasterpb[:x]))
 
 
-for k in 1:50
+for k in 1:200
     println("Iteration $(k)")
     #println(routes)
     #set_silent(rmasterpb)
@@ -54,16 +54,16 @@ for k in 1:50
     #println(value.(rmasterpb[:x]))
     #println(con)
     #println(c)
-    println(objective_function(rmasterpb))
+    #println(objective_function(rmasterpb))
     println("obj value : ", lower_bound)
 
     local prices = [0.0 for i in 1:n]
-    for i in 1:n
+    for i in 2:n
         prices[i] = dual(c[i])
     end
-    #println(prices)
+    println(prices)
     set_silent(submodel)
-    solvepctsp(prices, submodel)
+    solvepctsp(prices, submodel,distances)
     println("valeur pctsp ",objective_value(submodel))
     #println(prices)
     route = get_route(value.(submodel[:x]), value.(submodel[:z]))
@@ -124,13 +124,32 @@ for k in 1:50
 
     #@constraint(model,z >= 300)
     #@info "Adding the cut $(cut)"
+
+end
+
+sol = value.(rmasterpb[:x])
+for i in 1:length(routes)-1
+    if sol[i] > 0
+        println(routes[i])
+    end
 end
 
 
+for i in 1:length(routes) - 1
+    set_integer(rmasterpb[:x][i])
+end
+optimize!(rmasterpb)
 
 
 
+sol = value.(rmasterpb[:x])
+for i in 1:length(routes)-1
+    if sol[i] > 0
+        println(routes[i])
+    end
+end
 
+println(objective_value(rmasterpb))
 
 
 

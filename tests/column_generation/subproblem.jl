@@ -13,10 +13,10 @@ function generate_distance_matrix(n; random_seed=2)
     d = [sqrt((X[i] - X[j])^2 + (Y[i] - Y[j])^2) for i in 1:n, j in 1:n]
     return X, Y, d, prices, demands
 end
-
+#= 
 n = 20
 X, Y, d, prices, demands = generate_distance_matrix(n)
-capacity = 60
+capacity = 60 =#
 
 
 function build_tsp_model(demandes, capa, n)
@@ -66,7 +66,7 @@ function subtour(edges::Vector{Tuple{Int,Int}}, n, z::Vector{Float64})
     return shortest_subtour
 end
 
-lazy_model = build_tsp_model(demands, capacity, n)
+#lazy_model = build_tsp_model(demands, capacity, n)
 
 function subtour_elimination_callback(cb_data, model)
     status = callback_node_status(cb_data, model)
@@ -113,16 +113,16 @@ function subtour_elimination_callback(cb_data)
     )
     MOI.submit(lazy_model, MOI.LazyConstraint(cb_data), con)
 end
-
+#= 
 set_attribute(
     lazy_model,
     MOI.LazyConstraintCallback(),
     subtour_elimination_callback,
-)
+) =#
 
-function solvepctsp(prices::Vector{T}, model::Model) where {T<:Real}
+function solvepctsp(prices::Vector{T}, model::Model,dist) where {T<:Real}
     
-    @objective(model, Min, -sum(prices .* model[:z]) + sum(d .* model[:x]) / 2)
+    @objective(model, Min, -sum(prices .* model[:z]) + sum(dist .* model[:x]) / 2)
     optimize!(model)
 end
 
@@ -157,7 +157,7 @@ function get_route(x::Matrix{Float64}, z::Vector{Float64})
 end
 
 
-solvepctsp(prices, lazy_model)
+#solvepctsp(prices, lazy_model)
 
 function plot_tour(X, Y, x)
     # Create empty plot
@@ -199,5 +199,7 @@ function plot_tour(X, Y, x)
     return plot
 end
 
-get_route(value.(lazy_model[:x]),value.(lazy_model[:z]))
-plot_tour(X, Y, value.(lazy_model[:x]))
+#route = get_route(value.(lazy_model[:x]),value.(lazy_model[:z]))
+#println(route)
+#plot_tour(X, Y, value.(lazy_model[:x]))
+

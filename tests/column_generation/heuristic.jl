@@ -42,18 +42,18 @@ function nearest_neighbor_routes(
 
         # Return to depot
         push!(current_route, 1)
-        println( current_route)
+#=         println( current_route)
         indices = 2:length(current_route)-1  # Indices of the middle elements
         middle_elements = current_route[indices]  # Extract the middle elements
         shuffle!(middle_elements)  # Shuffle the middle elements
         current_route[indices] .= middle_elements 
-        println(current_route)
+        println(current_route) =#
         push!(routes, current_route)
     end
 
       # Generate random routes
     #routes = Vector{Vector{Int}}()
-    num_random_routes = 30
+    num_random_routes = 500
       for _ in 1:num_random_routes
           unvisited = Set(2:n_customers)  # Reset unvisited customers
   
