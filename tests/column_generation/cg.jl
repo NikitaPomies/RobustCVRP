@@ -1,6 +1,6 @@
 using JuMP, CPLEX, LinearAlgebra
 
-file_path = "../data/P-n20-k2.vrp"  # Replace with your instance file path
+file_path = "../data/P-n50-k10.vrp"  # Replace with your instance file path
 
 name, comment, capacity, n, coords, demands, depot, distances = parse_cvrp_instance(file_path)
 
@@ -11,7 +11,7 @@ demands = [demands[j] for j in 1:n]
 
 #routes = nearest_neighbor_routes(distances, demands, capacity)
 
-routes = init_column_pool(distances, demands, capacity, 200)
+routes = init_column_pool(distances, demands, capacity, 100)
 #println(routes)
 
 #= test = 0
@@ -39,6 +39,9 @@ end =#
  #Define restricted master problem
 
 rmasterpb = Model(CPLEX.Optimizer)
+#set_optimizer_attribute(rmasterpb, "CPX_PARAM_LPMETHOD", 4)
+#set_optimizer_attribute(rmasterpb, "CPX_PARAM_SOLUTIONTYPE", 2)
+set_silent(rmasterpb)
 
 R = length(routes)
 @variable(rmasterpb, x[1:R]>=0)
@@ -47,13 +50,14 @@ R = length(routes)
 @constraint(rmasterpb, c[i = 2:n], sum(x[r] for r in 1:R if i in routes[r]) >= 1)
 
 
-@constraint(rmasterpb, con, sum(x) <= 5) # nombre max de véhicules
+@constraint(rmasterpb, con, sum(x) <= 10) # nombre max de véhicules
 
 @objective(rmasterpb, Min, sum(compute_route_cost(routes[r], distances) * x[r] for r in 1:R))
 
 #Define the sub_model
 
 submodel = build_tsp_model(demands, capacity, n)
+set_silent(submodel)
 set_attribute(
     submodel,
     MOI.LazyConstraintCallback(),
@@ -87,7 +91,6 @@ for k in 1:200
         prices[i] = dual(c[i])
     end
     #println(prices)
-    set_silent(submodel)
     solvepctsp(prices, submodel,distances)
     println("valeur pctsp ",objective_value(submodel))
     
@@ -95,7 +98,7 @@ for k in 1:200
     route = get_route(value.(submodel[:x]), value.(submodel[:z]))
     if route in routes
         println("duplicate_routes")
-        #break
+        break
         continue
     end
     route_cost = compute_route_cost(route,distances)
