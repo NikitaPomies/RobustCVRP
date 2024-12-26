@@ -141,6 +141,108 @@ function lkh_two_opt(route, distances)
 end
 
 
+function reverse_segment!(tour, i, j)
+    reverse!(@view tour[i:j])
+    return tour
+end
+
+
+
+function three_opt_swap!(tour, i, j, k, case)
+    n = length(tour)
+    if case == 1
+        # Reverse segment i->j
+        reverse_segment!(tour, i, j-1)
+    elseif case == 2
+        # Reverse segment j->k
+        reverse_segment!(tour, j, k-1)
+    elseif case == 3
+        # Reverse both segments
+        reverse_segment!(tour, i, j-1)
+        reverse_segment!(tour, j, k-1)
+    elseif case == 4
+        # Rearrange segments without reversing
+        temp_tour = copy(tour)
+        # Copy first segment
+        idx = 1
+        for x in 1:i-1
+            tour[idx] = temp_tour[x]
+            idx += 1
+        end
+        # Copy second segment to third position
+        for x in j:k-1
+            tour[idx] = temp_tour[x]
+            idx += 1
+        end
+        # Copy third segment to second position
+        for x in i:j-1
+            tour[idx] = temp_tour[x]
+            idx += 1
+        end
+        # Copy rest of the tour
+        for x in k:n
+            tour[idx] = temp_tour[x]
+            idx += 1
+        end
+    end
+end
+
+function lkh_2opt_3opt(route, distances)
+    current_tour = copy(route)
+    improved = true
+    max_iterations = 100
+    iterations = 0
+    
+    while improved && iterations < max_iterations
+        improved = false
+        current_length = calculate_tour_length(current_tour, distances)
+        
+        # Try 2-opt moves first
+        for i in 2:length(current_tour)-1
+            for j in i+1:length(current_tour)-1
+                new_tour = copy(current_tour)
+                two_opt_swap!(new_tour, i, j)
+                new_length = calculate_tour_length(new_tour, distances)
+                
+                if new_length < current_length
+                    current_tour = new_tour
+                    current_length = new_length
+                    improved = true
+                    @goto next_iteration
+                end
+            end
+        end
+        
+        # Try 3-opt moves if no 2-opt improvement was found
+        for i in 2:length(current_tour)-2
+            for j in i+1:length(current_tour)-1
+                for k in j+1:length(current_tour)
+                    # Try all possible 3-opt configurations
+                    for case in 1:4
+                        new_tour = copy(current_tour)
+                        three_opt_swap!(new_tour, i, j, k, case)
+                        new_length = calculate_tour_length(new_tour, distances)
+                        
+                        if new_length < current_length
+                            current_tour = new_tour
+                            current_length = new_length
+                            improved = true
+                            @goto next_iteration
+                        end
+                    end
+                end
+            end
+        end
+        
+        @label next_iteration
+        iterations += 1
+    end
+    
+    return current_tour
+end
+
+
+
 function init_column_pool(
     distances::Matrix{T1},
     demands::Vector{T2},
@@ -172,7 +274,7 @@ function init_column_pool(
             push!(current_route, 1)
 
             # optimize the route here 
-            current_route = lkh_two_opt(current_route, distances)
+            current_route = lkh_2opt_3opt(current_route, distances)
             push!(routes, current_route)
 
         end

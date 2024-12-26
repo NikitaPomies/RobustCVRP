@@ -1,11 +1,12 @@
 using JuMP, CPLEX, LinearAlgebra
 
-file_path = "../data/P-n50-k10.vrp"  # Replace with your instance file path
+file_path = "../data/P-n60-k10.vrp"  # Replace with your instance file path
 
 name, comment, capacity, n, coords, demands, depot, distances = parse_cvrp_instance(file_path)
 
 demands = [demands[j] for j in 1:n]
-
+println(demands)
+println(distances)
 
 ##Construct initial routes
 
@@ -33,9 +34,15 @@ for route in routes
     println(new_route)
     new_cost = compute_route_cost(new_route,distances)
     println(new_cost)
+
+    new_route = lkh_2opt_3opt(route,distances)
+    println(new_route)
+    new_cost = compute_route_cost(new_route,distances)
+    println(new_cost)
+
     
 
-end =#
+end  =#
  #Define restricted master problem
 
 rmasterpb = Model(CPLEX.Optimizer)
@@ -49,8 +56,7 @@ R = length(routes)
 
 @constraint(rmasterpb, c[i = 2:n], sum(x[r] for r in 1:R if i in routes[r]) >= 1)
 
-
-@constraint(rmasterpb, con, sum(x) <= 10) # nombre max de véhicules
+@constraint(rmasterpb, con, sum(x) <=10) # nombre max de véhicules
 
 @objective(rmasterpb, Min, sum(compute_route_cost(routes[r], distances) * x[r] for r in 1:R))
 
@@ -150,4 +156,5 @@ println(objective_value(rmasterpb))
 
 
 
+ 
  
