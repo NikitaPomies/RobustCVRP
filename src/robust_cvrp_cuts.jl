@@ -3,21 +3,20 @@ using JuMP, CPLEX, LinearAlgebra
 
 include("instance.jl")
 
-instance = read_instance("../data/n_9-euclidean_true")
+instance = read_instance("../data/n_12-euclidean_true")
 
-function filter_duplicates(pairs::Vector{Tuple{Int, Int}})
-    unique_pairs = Set{Tuple{Int, Int}}()
-    filtered = Vector{Tuple{Int, Int}}()
-
+function find_one_route_clients(pairs::Vector{Tuple{Int,Int}}, n::Int64)
+    point_to_depot = Dict()
+    depot_point_to = Dict()
     for pair in pairs
-        sorted_pair = (min(pair[1], pair[2]), max(pair[1], pair[2]))
-        if sorted_pair ∉ unique_pairs
-            push!(filtered, pair)
-            push!(unique_pairs, sorted_pair)
+        if pair[1] == 1
+            depot_point_to[pair[2]] = true
+        end
+        if pair[2] == 1
+            point_to_depot[pair[1]] = true
         end
     end
-
-    return filtered
+    return [i for i in 1:n if get(point_to_depot, i, false) && get(depot_point_to, i, false)]
 end
 
 
@@ -29,15 +28,15 @@ function solve_subproblem(I::Instance, x_bar)
     n = length(I.demands)
 
     selected_e = selected_edges(x_bar, n)
-    println(selected_e)
-    selected_e = filter_duplicates(selected_e)
-    println(selected_e)
+    #println(selected_e)
+    # selected_e = filter_duplicates(selected_e)
+    #println(selected_e)
 
-    sort!(selected_e, by=x_bar -> (I.th[x_bar[1]] + I.th[x_bar[2]]), rev=true)
-    println(selected_e)
+    sort!(selected_e, by=x -> (I.th[x[1]] + I.th[x[2]]), rev=true)
+    #println(selected_e)
 
 
-    
+
 
     delta_1 = zeros(n, n)
 
@@ -58,7 +57,7 @@ function solve_subproblem(I::Instance, x_bar)
         end
     end
 
-    sort!(selected_e, by=x_bar -> (I.th[x_bar[1]] * I.th[x_bar[2]]), rev=true)
+    sort!(selected_e, by=x -> (I.th[x[1]] * I.th[x[2]]), rev=true)
 
     delta_2 = zeros(n, n)
 
@@ -127,6 +126,7 @@ function build_RCVRP_cuts_model(I::Instance)
     # Constraints
     #@constraint(model, sum(x[1, j] for j in 2:n) == 2)  # 8 vehicles leave the depot
     #@constraint(model, sum(x[i, 1] for i in 2:n) == 2)  # 8 vehicles return to the depot
+    @constraint(model, sum(x[i, 1] for i in 2:n) >= ceil(sum(I.demands)/I.capacity) ) # 8 vehicles return to the depot
 
     #z constraint 
     @constraint(model, obj_cstr, sum(I.distances[i, j] * x[i, j] for i in 1:n, j in 1:n if i != j) <= z)
@@ -176,26 +176,28 @@ function solve_RCVRP_iterative_cuts(I::Instance, model)
             break
         end
 
-
+        one_route = find_one_route_clients(selected_edges(x_k, n), n)
+        println(one_route)
         new_distances = zeros(n, n)
         for i in 1:n
             for j in 1:n
                 new_distances[i, j] = I.distances[i, j] + ret.delta_1_opt[i, j] * (I.th[i] + I.th[j]) + ret.delta_2_opt[i, j] * (I.th[i] * I.th[j])
-                if (new_distances[j, i] < new_distances[i, j])
-                    new_distances[j, i] = new_distances[i, j] # symmetric 
-                end
-                if (new_distances[j, i] > new_distances[i, j])
-                    new_distances[i, j] = new_distances[j, i] # symmetric 
-                end
-                if ((x_k[i, j] > 0) && (ret.delta_1_opt[i, j] > 0 || ret.delta_2_opt[i, j] > 0))
-                    println("Modifying distance ", i, j)
-                end
+
+            end
+        end
+
+        new_distances_symetric = zeros(n, n)
+        for i in 1:n
+            for j in 1:n
+                new_distances_symetric[i, j] = I.distances[j, i] + ret.delta_1_opt[j, i] * (I.th[i] + I.th[j]) + ret.delta_2_opt[j, i] * (I.th[i] * I.th[j])
+
             end
         end
 
         z = value.(model[:z])
         println("sum before : ", z - sum(new_distances[i, j] * x_k[i, j] for i in 1:n, j in 1:n if i != j))
         cut = @constraint(model, sum(new_distances[i, j] * model[:x][i, j] for i in 1:n, j in 1:n if i != j) <= model[:z])
+        cut2 = @constraint(model, sum(new_distances_symetric[i, j] * model[:x][i, j] for i in 1:n, j in 1:n if i != j) <= model[:z])
 
         set_silent(model)
         optimize!(model)
@@ -219,7 +221,7 @@ function solve_RCVRP_callback_cuts(I::Instance, model)
         end
 
         x_k = callback_value.(cb_data, model[:x])
-        lower_bound =  callback_value.(cb_data, model[:z])
+        lower_bound = callback_value.(cb_data, model[:z])
 
 
 
@@ -234,20 +236,32 @@ function solve_RCVRP_callback_cuts(I::Instance, model)
         for i in 1:n
             for j in 1:n
                 new_distances[i, j] = I.distances[i, j] + ret.delta_1_opt[i, j] * (I.th[i] + I.th[j]) + ret.delta_2_opt[i, j] * (I.th[i] * I.th[j])
-                if (new_distances[j, i] < new_distances[i, j])
-                    new_distances[j, i] = new_distances[i, j] # symmetric 
-                end
-                if (new_distances[j, i] > new_distances[i, j])
-                    new_distances[i, j] = new_distances[j, i] # symmetric 
-                end
-              #=   if ((x_k[i, j] > 0) && (ret.delta_1_opt[i, j] > 0 || ret.delta_2_opt[i, j] > 0))
-                    println("Modifying distance ", i, j)
-                end =#
+                #=                if (new_distances[j, i] < new_distances[i, j])
+                                   new_distances[j, i] = new_distances[i, j] # symmetric 
+                               end
+                               if (new_distances[j, i] > new_distances[i, j])
+                                   new_distances[i, j] = new_distances[j, i] # symmetric 
+                               end =#
+                #=   if ((x_k[i, j] > 0) && (ret.delta_1_opt[i, j] > 0 || ret.delta_2_opt[i, j] > 0))
+                      println("Modifying distance ", i, j)
+                  end =#
             end
         end
 
+        new_distances_symetric = zeros(n, n)
+        for i in 1:n
+            for j in 1:n
+                new_distances_symetric[i, j] = I.distances[j, i] + ret.delta_1_opt[j, i] * (I.th[i] + I.th[j]) + ret.delta_2_opt[j, i] * (I.th[i] * I.th[j])
+
+            end
+        end
+
+
         cut = @build_constraint(sum(new_distances[i, j] * model[:x][i, j] for i in 1:n, j in 1:n if i != j) <= model[:z])
+        cut2 = @build_constraint( sum(new_distances_symetric[i, j] * model[:x][i, j] for i in 1:n, j in 1:n if i != j) <= model[:z])
+
         MOI.submit(model, MOI.LazyConstraint(cb_data), cut)
+        MOI.submit(model, MOI.LazyConstraint(cb_data), cut2)
     end
 
     set_attribute(
