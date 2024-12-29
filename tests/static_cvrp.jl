@@ -1,7 +1,7 @@
 
 using JuMP, CPLEX, LinearAlgebra
 
-file_path = "tests/data/P-n20-k2.vrp"  # Replace with your instance file path
+file_path = "../data/P-n40-k5.vrp"  # Replace with your instance file path
 name, comment, capacity, n, coords, demands, depot, distances = parse_cvrp_instance(file_path)
 
 
@@ -57,8 +57,8 @@ prinln(objective_value(model))
  =#
 
 # Constraints
-@constraint(model, sum(x[1, j] for j in 2:n) == 2)  # 8 vehicles leave the depot
-@constraint(model, sum(x[i, 1] for i in 2:n) == 2)  # 8 vehicles return to the depot
+@constraint(model, sum(x[1, j] for j in 2:n) == 5)  # 8 vehicles leave the depot
+@constraint(model, sum(x[i, 1] for i in 2:n) == 5)  # 8 vehicles return to the depot
 
 @objective(model, Min, sum(distances[i, j] * x[i, j] for i in 1:n, j in 1:n if i != j))
 optimize!(model)
