@@ -4,7 +4,7 @@ file_path = "tests/data/test_perso.vrp"  # Replace with your instance file path
 #name, comment, capacity, n, coords, demands, depot, distances = parse_cvrp_instance(file_path)
 
 
-include("data/real_data.vrp")
+include("data/n_10-euclidean_true")
 
 println("n = $n")
 println("t = $t")
@@ -69,7 +69,7 @@ function solve_subproblem_bis(x_bar)
     n = length(demands)
 
     selected_e = selected_edges(x_bar, length(demands))
-    sort!(selected_e, by=x->distances[x[1],x[2]] * (IT[x[1]] + IT[x[2]]), rev=true)
+    sort!(selected_e, by=x->(IT[x[1]] + IT[x[2]]), rev=true)
 
     delta_1 = zeros(n, n)
 
@@ -90,7 +90,7 @@ function solve_subproblem_bis(x_bar)
         end
     end
 
-    sort!(selected_e, by=x->distances[x[1],x[2]] * (IT[x[1]] * IT[x[2]]), rev=true)
+    sort!(selected_e, by=x->(IT[x[1]] * IT[x[2]]), rev=true)
 
     delta_2 = zeros(n, n)
 
@@ -173,8 +173,8 @@ end
 
 
 # Constraints
-@constraint(model, sum(x[1, j] for j in 2:n) == 2)  # 8 vehicles leave the depot
-@constraint(model, sum(x[i, 1] for i in 2:n) == 2)  # 8 vehicles return to the depot
+#@constraint(model, sum(x[1, j] for j in 2:n) == 2)  # 8 vehicles leave the depot
+#@constraint(model, sum(x[i, 1] for i in 2:n) == 2)  # 8 vehicles return to the depot
 
 #z constraint 
 @constraint(model, obj_cstr, sum(distances[i, j] * x[i, j] for i in 1:n, j in 1:n if i != j) <= z)
@@ -204,7 +204,7 @@ for k in 1:MAXIMUM_ITERATIONS
     @assert is_solved_and_feasible(model)
     lower_bound = objective_value(model)
     x_k = value.(x)
-    ret = solve_subproblem(x_k)
+    ret = solve_subproblem_bis(x_k)
     #print_iteration(k, lower_bound, upper_bound, gap)
     #=   if gap < ABSOLUTE_OPTIMALITY_GAP
           println("Terminating with the optimal solution")
@@ -222,7 +222,7 @@ for k in 1:MAXIMUM_ITERATIONS
     #println(ret.delta_2_opt)
     if lower_bound >= ret.obj
         break
-    end
+    end 
 
 
     new_distances = zeros(n, n)
@@ -340,8 +340,8 @@ end
 
 
 # Constraints
-@constraint(model_d, sum(x[1, j] for j in 2:n) == 2)  # 8 vehicles leave the depot
-@constraint(model_d, sum(x[i, 1] for i in 2:n) == 2)  # 8 vehicles return to the depot
+#@constraint(model_d, sum(x[1, j] for j in 2:n) == 2)  # 8 vehicles leave the depot
+#@constraint(model_d, sum(x[i, 1] for i in 2:n) == 2)  # 8 vehicles return to the depot
 
 @objective(model_d, Min, sum(distances[i, j] * x[i, j] for i in 1:n, j in 1:n if i != j) +
                          lambda_1 * T + lambda_2 * T * T + sum(mu_1[i, j] + 2 * mu_2[i, j] for i in 1:n for j in 1:n if i != j))
