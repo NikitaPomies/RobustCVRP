@@ -3,7 +3,7 @@ using JuMP, CPLEX, LinearAlgebra
 
 include("instance.jl")
 
-instance  = read_instance("../data/n_20-euclidean_true")
+instance  = read_instance("../data/n_9-euclidean_true")
 
 
 function build_RCVRP_dual_model(I::Instance)
