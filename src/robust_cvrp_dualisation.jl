@@ -3,7 +3,7 @@ using JuMP, CPLEX, LinearAlgebra
 
 include("instance.jl")
 
-instance  = read_instance("../data/n_12-euclidean_true")
+instance  = read_instance("../data/n_14-euclidean_true")
 
 
 function build_RCVRP_dual_model(I::Instance)
@@ -61,6 +61,7 @@ function build_RCVRP_dual_model(I::Instance)
     # Constraints
     #@constraint(model_d, sum(x[1, j] for j in 2:n) == 2)  # 8 vehicles leave the depot
     #@constraint(model_d, sum(x[i, 1] for i in 2:n) == 2)  # 8 vehicles return to the depot
+    
     @constraint(model_d,sum(x[1, j] for j in 2:n) >= ceil(sum(I.demands)/I.capacity))
 
 

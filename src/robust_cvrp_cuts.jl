@@ -3,7 +3,7 @@ using JuMP, CPLEX, LinearAlgebra
 
 include("instance.jl")
 
-instance = read_instance("../data/n_12-euclidean_true")
+instance = read_instance("../data/n_9-euclidean_true")
 
 function find_one_route_clients(pairs::Vector{Tuple{Int,Int}}, n::Int64)
     point_to_depot = Dict()
