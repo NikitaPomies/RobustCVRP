@@ -1,6 +1,6 @@
 using JuMP, CPLEX, LinearAlgebra
 
-file_path = "../data/P-n60-k10.vrp"  # Replace with your instance file path
+file_path = "data/P-n40-k5.vrp"  # Replace with your instance file path
 
 name, comment, capacity, n, coords, demands, depot, distances = parse_cvrp_instance(file_path)
 
@@ -131,28 +131,31 @@ for k in 1:200
 end
 
 sol = value.(rmasterpb[:x])
-for i in 1:length(routes)-1
+for i in 1:length(routes)
     if sol[i] > 0
         println(routes[i])
     end
 end
 
 
-for i in 1:length(routes) - 1
+for i in 1:length(routes)
     set_integer(rmasterpb[:x][i])
 end
 optimize!(rmasterpb)
 
 
-
+println("heuristic_solution")
+global S = 0
 sol = value.(rmasterpb[:x])
-for i in 1:length(routes)-1
+for i in 1:length(routes)
     if sol[i] > 0
-        println(routes[i])
+        println(routes[i],compute_route_cost(routes[i],distances))
+        global S+= compute_route_cost(routes[i],distances)
     end
 end
 
 println(objective_value(rmasterpb))
+println(S)
 
 
 

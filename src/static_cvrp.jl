@@ -1,22 +1,8 @@
 
 using JuMP, CPLEX, LinearAlgebra
 
-file_path = "tests/data/P-n20-k2.vrp"  # Replace with your instance file path
+file_path = "data/P-n40-k5.vrp"  # Replace with your instance file path
 name, comment, capacity, n, coords, demands, depot, distances = parse_cvrp_instance(file_path)
-
-T = 1
-
-IT = rand(0:10, n)
-
-# Generate a matrix of size n x n with random integers between 0 and 100
-matrix = rand(0:10, n, n)
-
-# Print the results
-println("Vector IT:")
-println(IT)
-
-println("\nMatrix:")
-println(matrix)
 
 
 # Create the model
@@ -27,21 +13,6 @@ model = Model(CPLEX.Optimizer)
 # Decision variables
 @variable(model, x[i=1:n, j=1:n], Bin)  # Binary variable: 1 if arc (i, j) is used
 @variable(model, u[1:n] >= 0)           # MTZ variables: auxiliary variables for subtour elimination
-@variable(model, 0 <= mu_1[i=1:n, j=1:n])
-@variable(model, 0 <= mu_2[i=1:n, j=1:n])
-@variable(model, lambda_1 >= 0)
-@variable(model, lambda_2 >= 0)
-
-
-for i in 1:n
-    for j in 1:n
-        if (i != j)
-            @constraint(model, mu_1[i, j] + lambda_1 >= (IT[i] + IT[j]) * x[i, j])
-            @constraint(model, mu_2[i, j] + lambda_2 >= (IT[i] * IT[j]) * x[i, j])
-        end
-    end
-end
-
 
 # Objective: minimize the total distance
 #@objective(model, Min, sum(distances[i, j] * x[i, j] for i in 1:n, j in 1:n if i != j))
@@ -76,23 +47,20 @@ end
 @constraint(model, sum(x[1, j] for j in 2:n) == sum(x[j, 1] for j in 2:n)) # 8 vehicles leave the depot
 
 
+#= 
+@objective(model, Min, sum(x[1, j] for j in 2:n ))
+optimize!(model)
+first_obj_value = objective_value(model)
+prinln(objective_value(model))
 
 
+ =#
 
 # Constraints
-@constraint(model, sum(x[1, j] for j in 2:n) == 2)  # 8 vehicles leave the depot
-@constraint(model, sum(x[i, 1] for i in 2:n) == 2)  # 8 vehicles return to the depot
+@constraint(model, sum(x[1, j] for j in 2:n) == 5)  # 8 vehicles leave the depot
+@constraint(model, sum(x[i, 1] for i in 2:n) == 5)  # 8 vehicles return to the depot
 
-@objective(model, Min, sum(distances[i, j] * x[i, j] for i in 1:n, j in 1:n if i != j) + 
-lambda_1 * T + lambda_2 * T * T + sum(mu_1[i, j] + 2 * mu_2[i, j] for i in 1:n for j in 1:n if i != j)) 
-#@objective(model, Min, sum(distances[i, j] * x[i, j] for i in 1:n, j in 1:n if i != j))
-
-for i in 1:n
-    @constraint(model,x[i,i]==0)
-    @constraint(model,mu_1[i,i]==0)
-    @constraint(model,mu_2[i,i]==0)
-end
-
+@objective(model, Min, sum(distances[i, j] * x[i, j] for i in 1:n, j in 1:n if i != j))
 optimize!(model)
 
 # Solve the model
