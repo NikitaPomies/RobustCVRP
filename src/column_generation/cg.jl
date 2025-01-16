@@ -1,6 +1,6 @@
-using JuMP, CPLEX, LinearAlgebra
+using JuMP, CPLEX,Gurobi, LinearAlgebra
 
-file_path = "data/P-n40-k5.vrp"  # Replace with your instance file path
+file_path = "data/P-n50-k10.vrp"  # Replace with your instance file path
 
 name, comment, capacity, n, coords, demands, depot, distances = parse_cvrp_instance(file_path)
 
@@ -45,7 +45,7 @@ for route in routes
 end  =#
  #Define restricted master problem
 
-rmasterpb = Model(CPLEX.Optimizer)
+rmasterpb = Model(Gurobi.Optimizer)
 #set_optimizer_attribute(rmasterpb, "CPX_PARAM_LPMETHOD", 4)
 #set_optimizer_attribute(rmasterpb, "CPX_PARAM_SOLUTIONTYPE", 2)
 set_silent(rmasterpb)
@@ -56,7 +56,7 @@ R = length(routes)
 
 @constraint(rmasterpb, c[i = 2:n], sum(x[r] for r in 1:R if i in routes[r]) >= 1)
 
-@constraint(rmasterpb, con, sum(x) <=10) # nombre max de véhicules
+@constraint(rmasterpb, con, sum(x) <=15) # nombre max de véhicules
 
 @objective(rmasterpb, Min, sum(compute_route_cost(routes[r], distances) * x[r] for r in 1:R))
 

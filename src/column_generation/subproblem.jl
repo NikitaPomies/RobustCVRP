@@ -1,5 +1,5 @@
 
-using JuMP
+using JuMP, Gurobi
 import CPLEX
 import Random
 using Plots
@@ -20,9 +20,9 @@ capacity = 60 =#
 
 
 function build_tsp_model(demandes, capa, n)
-    model = Model(CPLEX.Optimizer)
+    model = Model(Gurobi.Optimizer)
     #set_optimizer_attribute(model, "CPX_PARAM_PREIND", 0)
-    set_optimizer_attribute(model, "CPX_PARAM_ADVIND", 0)
+    #set_optimizer_attribute(model, "CPX_PARAM_ADVIND", 0)
     @variable(model, x[1:n, 1:n], Bin, Symmetric)
     @variable(model, z[1:n], Bin)
     @constraint(model, [i in 1:n], sum(x[i, :]) == 2 * z[i])
