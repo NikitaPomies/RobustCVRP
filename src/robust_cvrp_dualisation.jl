@@ -1,15 +1,15 @@
 
-using JuMP, CPLEX, LinearAlgebra
+using JuMP, CPLEX, LinearAlgebra, Gurobi
 
 include("instance.jl")
 
-instance  = read_instance("../data/n_14-euclidean_true")
+instance  = read_instance("../data/n_20-euclidean_true")
 
 
 function build_RCVRP_dual_model(I::Instance)
     n = length(I.demands)
     # Create the model_d
-    model_d = Model(CPLEX.Optimizer)
+    model_d = Model(Gurobi.Optimizer)
     #set_optimizer_attribute(model_d, "TimeLimit", 5)
 
 

@@ -90,7 +90,7 @@ function nearest_neighbor_routes(
 end
 
 
-function compute_route_cost(route::Vector{T1}, distances::Matrix{Float64}) where {T1<:Real}
+function compute_route_cost(route::Vector{T1}, distances::Matrix{T1}) where {T1<:Real}
     S = 0
     for i in 1:length(route)-1
         u, v = route[i], route[i+1]
