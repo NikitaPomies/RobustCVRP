@@ -1,11 +1,13 @@
 using JuMP, CPLEX,Gurobi, LinearAlgebra
 
 include("../instance.jl")
+include("heuristic.jl")
+include("subproblem.jl")
 
 #name, comment, capacity, n, coords, demands, depot, distances = parse_cvrp_instance(file_path)
 
 
-instance  = read_instance("../../data/n_15-euclidean_true")
+instance  = read_instance("../../data/n_40-euclidean_true")
 
 
 println(instance.distances)
@@ -130,11 +132,13 @@ for k in 1:200
             if i!=j
                 dual1 = dual(z1[i,j])
                 dual2 = dual(z2[i,j])
-                new_distances[i,j]  += - dual1*(th[i]+th[j]) - dual2*(th[i]*th[j]) 
-                println(new_distances[i,j] - instance.distances[i,j])
+                #println(dual1)
+                new_distances[i,j]  +=  dual1*(th[i]+th[j])  + dual2*(th[i]*th[j]) 
+                #println(new_distances[i,j] - instance.distances[i,j])
             end
         end
     end
+    println("startin to solve subpb")
     solvepctsp(prices, submodel,new_distances)
     println("valeur pctsp ",objective_value(submodel))
     
@@ -194,6 +198,7 @@ for i in 1:length(routes)
 end
 
 
+println("value of relaxation : ", objective_value(rmasterpb))
 for i in 1:length(routes)
     set_integer(rmasterpb[:x][i])
 end

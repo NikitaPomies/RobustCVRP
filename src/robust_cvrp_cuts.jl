@@ -3,7 +3,7 @@ using JuMP, CPLEX, LinearAlgebra
 
 include("instance.jl")
 
-instance = read_instance("../data/n_9-euclidean_true")
+instance = read_instance("../data/n_40-euclidean_true")
 
 function find_one_route_clients(pairs::Vector{Tuple{Int,Int}}, n::Int64)
     point_to_depot = Dict()
@@ -280,8 +280,8 @@ end
 
 
 # Solve the model
-solved_model = solve_RCVRP_iterative_cuts(instance, model)
-#solved_model = solve_RCVRP_callback_cuts(instance, model)
+#solved_model = solve_RCVRP_iterative_cuts(instance, model)
+solved_model = solve_RCVRP_callback_cuts(instance, model)
 
 # Extract and print the solution
 if termination_status(solved_model) == MOI.OPTIMAL
