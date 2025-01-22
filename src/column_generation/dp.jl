@@ -1,5 +1,8 @@
 
 using Random
+using JuMP
+using Gurobi
+using LinearAlgebra
 
 
 function generate_distance_matrix(n; random_seed=2)
@@ -7,8 +10,8 @@ function generate_distance_matrix(n; random_seed=2)
     X = 100 * rand(rng, n)
     Y = 100 * rand(rng, n)
     prices = 100 * rand(rng, n)
-    demands = 100 * rand(rng, n)
-    d = [sqrt((X[i] - X[j])^2 + (Y[i] - Y[j])^2) for i in 1:n, j in 1:n]
+    demands = [round(100 * rand(rng), digits=1) for i in 1:n]
+    d = [round(sqrt((X[i] - X[j])^2 + (Y[i] - Y[j])^2),digits = 1) for i in 1:n, j in 1:n]
     return X, Y, d, prices, demands
 end
 
@@ -24,11 +27,25 @@ function update_distance_matrix!(d::Matrix{Float64})
     return d
 end
 
-n = 10
-X, Y, d, prices, demands = generate_distance_matrix(n)
+n = 20
+X, Y, d, prices, demands = generate_distance_matrix(n-1)
 capacity = 15
+d= update_distance_matrix!(d)
+# Adding a new row (equal to the first row)
+new_row = d[1, :]  # Extract the first row
+matrix_with_row = vcat(d, new_row')
 
-d = update_distance_matrix!(d)
+# Adding a new column (equal to the first column)
+new_column = d[:, 1]  # Extract the first column
+d_dp = hcat(matrix_with_row, [new_column; new_column[1]])
+
+demands_dp = copy(demands)
+push!(demands_dp,0)
+demands_dp[1] = 0
+d_dp[1,n] = 1000000
+d_dp[n,1] = 1000000
+
+
 
 
 
@@ -99,7 +116,7 @@ function mono_direction_dp(distances,demands,capacity)
     push!(label_lists[src],Label(zeros(Int,n),Int[0],0,src))
     label_lists[src][1].dummy_ressource[1] = 1
     E = [src]
-    print(label_lists)
+    #print(label_lists)
     while length(E) > 0
         current_node = pop!(E)
         for label in label_lists[current_node]
@@ -131,9 +148,179 @@ function mono_direction_dp(distances,demands,capacity)
 return label_lists
 end
 
-d[1,10] = 33333
-demands[10] = 0
-test = mono_direction_dp(d,demands,200)
-println(test[10])
+println(d_dp)
+println()
+test = mono_direction_dp(d_dp,demands_dp,200)
+#println(test[n])
+best_route = findmin(x.cost for x in test[n])
+println(best_route)
 #println(d[1,10])
 #println(demands)
+
+capacity  = 200
+
+
+
+function build_tsp_model(demandes, capa, n)
+    model = Model(Gurobi.Optimizer)
+    #set_optimizer_attribute(model, "CPX_PARAM_PREIND", 0)
+    #set_optimizer_attribute(model, "CPX_PARAM_ADVIND", 0)
+    @variable(model, x[1:n, 1:n], Bin, Symmetric)
+    @variable(model, z[1:n], Bin)
+    @constraint(model, [i in 1:n], sum(x[i, :]) == 2 * z[i])
+    @constraint(model, [i in 1:n], x[i, i] == 0)
+    @constraint(model, z[1] == 1) # En foncuton du prix associé au dépot, il faut forcer le pasage par le dépot 
+    @constraint(model, sum(demandes .* z) <= capa)
+    return model
+end
+
+
+
+function selected_edges(x::Matrix{Float64}, n)
+    return Tuple{Int,Int}[(i, j) for i in 1:n, j in 1:n if x[i, j] > 0.5]
+end
+
+function subtour(x::Matrix{Float64}, z::Vector{Float64})
+    return subtour(selected_edges(x, size(x, 1)), size(x, 1), z)
+end
+
+subtour(x::AbstractMatrix{VariableRef}, z::Vector{VariableRef}) = subtour(value.(x), value.(z))
+
+function subtour(edges::Vector{Tuple{Int,Int}}, n, z::Vector{Float64})
+    selected = Set([i for i in 1:n if z[i] > 0.5])
+
+    shortest_subtour = collect(selected)  # Initialize with all selected nodes
+    unvisited = copy(selected)  # Start with selected nodes only
+
+    while !isempty(unvisited)
+        this_cycle, neighbors = Int[], unvisited
+        while !isempty(neighbors)
+            current = pop!(neighbors)
+            push!(this_cycle, current)
+            if length(this_cycle) > 1
+                pop!(unvisited, current)
+            end
+            neighbors =
+                [j for (i, j) in edges if i == current && j in unvisited]
+        end
+        if length(this_cycle) < length(shortest_subtour)
+            shortest_subtour = this_cycle
+        end
+    end
+    return shortest_subtour
+end
+
+#lazy_model = build_tsp_model(demands, capacity, n)
+
+function subtour_elimination_callback(cb_data, model)
+    status = callback_node_status(cb_data, model)
+    if status != MOI.CALLBACK_NODE_STATUS_INTEGER
+        return
+    end
+    
+    x_val = callback_value.(cb_data, model[:x])
+    y_val = callback_value.(cb_data, model[:z])
+    cycle = subtour(x_val, y_val)
+    selected_count = sum(y_val)
+    
+    if !(1 < length(cycle) < selected_count)
+        return
+    end
+    
+    S = [(i, j) for (i, j) in Iterators.product(cycle, cycle) if i < j]
+    con = @build_constraint(
+        sum(model[:x][i, j] for (i, j) in S) <= length(cycle) - 1
+    )
+    MOI.submit(model, MOI.LazyConstraint(cb_data), con)
+end
+
+
+function subtour_elimination_callback(cb_data)
+    status = callback_node_status(cb_data, lazy_model)
+    if status != MOI.CALLBACK_NODE_STATUS_INTEGER
+        return
+    end
+
+    x_val = callback_value.(cb_data, lazy_model[:x])
+    y_val = callback_value.(cb_data, lazy_model[:z])
+
+    cycle = subtour(x_val, y_val)
+    selected_count = sum(y_val)
+
+    if !(1 < length(cycle) < selected_count)
+        return
+    end
+
+    S = [(i, j) for (i, j) in Iterators.product(cycle, cycle) if i < j]
+    con = @build_constraint(
+        sum(lazy_model[:x][i, j] for (i, j) in S) <= length(cycle) - 1
+    )
+    MOI.submit(lazy_model, MOI.LazyConstraint(cb_data), con)
+end
+#= 
+set_attribute(
+    lazy_model,
+    MOI.LazyConstraintCallback(),
+    subtour_elimination_callback,
+) =#
+
+function solvepctsp(prices::Vector{T}, model::Model,dist) where {T<:Real}
+    
+    @objective(model, Min, -sum(prices .* model[:z]) + sum(dist .* model[:x]) / 2)
+    optimize!(model)
+end
+
+function get_route(x::Matrix{Float64}, z::Vector{Float64})
+    n = size(x, 1)
+    selected = [i for i in 1:n if ((z[i] > 0.5) && (i!=1))]
+    route = [1]  # Start from depot
+    current = 1
+
+    
+    while length(route) <= length(selected) +1
+        # Find next node in route
+        next_found = false
+        for j in selected
+            if !( j in route) && x[current, j] > 0.5
+                push!(route, j)
+                current = j
+                next_found = true
+                break
+            end
+        end
+        
+        # If no next node found (means we're returning to depot)
+        # and we haven't visited all selected nodes, start from depot again
+        if !next_found 
+            push!(route,1)
+            break
+        end
+    end
+    
+    return route
+end
+
+demands[1] = 0
+lazy_model = build_tsp_model(demands, capacity, n-1)
+set_silent(lazy_model)
+
+
+set_attribute(
+    lazy_model,
+    MOI.LazyConstraintCallback(),
+    subtour_elimination_callback,
+) 
+
+
+solvepctsp(zeros(n-1),lazy_model,d)
+route = get_route(value.(lazy_model[:x]),value.(lazy_model[:z]))
+
+global S = 0
+for x in route
+    global S+= demands[x]
+end
+println("capacity : $(S)")
+println("cost $(objective_value(lazy_model))")
+println(route)
+
+println(d -transpose(d))
