@@ -3,7 +3,7 @@ using JuMP, CPLEX, LinearAlgebra
 
 include("instance.jl")
 
-instance = read_instance("../data/n_10-euclidean_true")
+instance = read_instance("../data/n_10-euclidean_false")
 
 function find_one_route_clients(pairs::Vector{Tuple{Int,Int}}, n::Int64)
     point_to_depot = Dict()
@@ -115,13 +115,13 @@ function build_RCVRP_cuts_model(I::Instance)
             @constraint(model, u[i] - u[j] <= (I.capacity) * (1 - x[i, j]) - I.demands[j])
         end
     end
-
+    
     for i in 2:n, j in 2:n
         if i != j
             @constraint(model, x[i, j] + x[j, i] <= 1)
         end
     end
-
+    
     @constraint(model, [i in 2:n], I.demands[i] <= u[i] <= I.capacity)
 
     @constraint(model, sum(x[1, j] for j in 2:n) == sum(x[j, 1] for j in 2:n))
@@ -129,15 +129,18 @@ function build_RCVRP_cuts_model(I::Instance)
     # Constraints
     #@constraint(model, sum(x[1, j] for j in 2:n) == 2)  # 8 vehicles leave the depot
     #@constraint(model, sum(x[i, 1] for i in 2:n) == 2)  # 8 vehicles return to the depot
-    @constraint(model, sum(x[i, 1] for i in 2:n) >= ceil(sum(I.demands)/I.capacity) ) # 8 vehicles return to the depot
+
+    @constraint(model, sum(x[i, 1] for i in 2:n) >= ceil(sum(I.demands)/I.capacity) ) #We make sure we have enough tours to satisfy the demand
 
     #z constraint 
     @constraint(model, obj_cstr, sum(I.distances[i, j] * x[i, j] for i in 1:n, j in 1:n if i != j) <= z)
 
+    @constraint(model, [i in 1:n], x[i,i]==0)
+    """
     for i in 1:n
         @constraint(model, x[i, i] == 0)
     end
-
+    """
     @objective(model, Min, z)
 
     return model
@@ -181,10 +184,10 @@ function solve_RCVRP_iterative_cuts(I::Instance, model)
         one_route = find_one_route_clients(selected_edges(x_k, n), n)
         println(one_route)
         new_distances = zeros(n, n)
+
         for i in 1:n
             for j in 1:n
                 new_distances[i, j] = I.distances[i, j] + ret.delta_1_opt[i, j] * (I.th[i] + I.th[j]) + ret.delta_2_opt[i, j] * (I.th[i] * I.th[j])
-
             end
         end
 
@@ -199,7 +202,7 @@ function solve_RCVRP_iterative_cuts(I::Instance, model)
         z = value.(model[:z])
         println("sum before : ", z - sum(new_distances[i, j] * x_k[i, j] for i in 1:n, j in 1:n if i != j))
         cut = @constraint(model, sum(new_distances[i, j] * model[:x][i, j] for i in 1:n, j in 1:n if i != j) <= model[:z])
-        cut2 = @constraint(model, sum(new_distances_symetric[i, j] * model[:x][i, j] for i in 1:n, j in 1:n if i != j) <= model[:z])
+        #cut2 = @constraint(model, sum(new_distances_symetric[i, j] * model[:x][i, j] for i in 1:n, j in 1:n if i != j) <= model[:z])
 
         set_silent(model)
         optimize!(model)
@@ -225,14 +228,10 @@ function solve_RCVRP_callback_cuts(I::Instance, model)
         x_k = callback_value.(cb_data, model[:x])
         lower_bound = callback_value.(cb_data, model[:z])
 
-
-
         ret = solve_subproblem(I, x_k)
         if lower_bound >= ret.obj
             return
         end
-
-
 
         new_distances = zeros(n, n)
         for i in 1:n
