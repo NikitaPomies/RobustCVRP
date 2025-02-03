@@ -1,4 +1,4 @@
-using JuMP, CPLEX, LinearAlgebra, GLPK
+using JuMP, CPLEX, LinearAlgebra
 
 
 include("instance.jl")
@@ -32,33 +32,24 @@ function build_BPF_model(I::Instance)
 
     # Create the model
     model = Model(CPLEX.Optimizer)
-    K=n
-    #set_optimizer_attribute(model, "TimeLimit", 5)
-
-
-    # Decision variables
-
+    
     @variable(model, x[i=2:n, j=2:n], Bin)  # Binary variable: 1 if arc (i, j) is used
     @variable(model, p[i = 2:n], Bin)
-    #@constraint(model, p[n] == 1)
-
-    @variable(model, t[i = 2:n], Int)
-    @constraint(model, [i in 2:n], t[i] >=0)
-
-    @variable(model, x_0[j = 2:n], Int)
+    @variable(model, t[i = 2:n]>=0, Int)  
+    @variable(model, x_0[j = 2:n]>=0, Int)
     @constraint(model,[j in 2:n], x_0[j] <=2)
-    @constraint(model, [j in 2:n], x_0[j] >=0)
+   
 
-    @variable(model, f[i=2:n, j=2:n], Int)
-    #@constraint(model, [j in 1:n], f[1,j] ==0)
-    @constraint(model, [i=2:n, j=2:n], f[i,j] >=0)
-
-    @variable(model, u[i=2:n-1], Int)
+    @variable(model, f[i=2:n, j=2:n]>=0, Int)
+    
+    @variable(model, u[i=2:n-1]>=0, Int)
             
-    @constraint(model, [i in 2:n], sum(x[:, i]) - p[i]== 1)  
-    @constraint(model, [i in 2:n], sum(x[i, :]) + p[i]== 1) 
 
-    #@constraint(model, [i in 2:n], t[i] + sum(f[i,:]) == sum(f[:,i]) +I.demands[i])
+    @constraint(model, [i in 2:n], sum(x[:, i]) - p[i] == 1) 
+
+    @constraint(model, [i in 2:n], sum(x[i, :]) + p[i] == 1) 
+
+    @constraint(model, [i in 2:n], t[i] + sum(f[i,:]) == sum(f[:,i]) +I.demands[i])
 
     @constraint(model, [i in 2:n, j in 2:n], I.demands[i]*x[i,j] <= f[i,j])
 
@@ -68,22 +59,15 @@ function build_BPF_model(I::Instance)
 
     @constraint(model, [i in 2:n], t[i] <= I.capacity*p[i])
 
-    #@constraint(model, sum(x_0) <= 2*K)
-    #@constraint(model, sum(p) <= K)
-    @constraint(model, sum(x_0) >= 2*ceil(sum(I.demands)/I.capacity))
-    #@constraint(model, sum(p) >= ceil(sum(I.demands)/I.capacity))
+    @constraint(model, sum(p) >= ceil(sum(I.demands)/I.capacity))
 
-    #@constraint(model,[j in 2:n], sum(p[k] for k in j:n) >=ceil(sum(I.demands[k] for k in j:n)/I.capacity))
+    @constraint(model, sum(x_0) >= 2*ceil(sum(I.demands)/I.capacity))
 
     @constraint(model, [i in 2:n-1], i <= u[i])
-    @constraint(model, [i in 2:n-1], u[i] <= i*p[i] + (n-1)*(1-p[i]))
 
+    @constraint(model, [i in 2:n-1], u[i] <= i*p[i] + (n-1)*(1-p[i]))
     
-    for i in 2:n-1, j in 2:n-1
-        if i != j
-            @constraint(model, u[i] - u[j] +(n-j-1)*x[i,j] <= n-j-1)
-        end
-    end
+    @constraint(model, [i in 2:n-1, j in 2:n-1, i!=j],u[i] - u[j] +(n-j-1)*x[i,j] <= n-j-1)
     
     @constraint(model, [i in 2:n], x[i,i]==0)
     
@@ -94,8 +78,8 @@ function build_BPF_model(I::Instance)
 end
 
 
-#model = build_BPF_model(instance)
-model = flow_model(instance)
+model = build_BPF_model(instance)
+#model = flow_model(instance)
 
 set_optimizer_attribute(model, "CPXPARAM_Conflict_Algorithm", 1)  # Active l'analyse de conflit
 set_optimizer_attribute(model, "CPXPARAM_MIP_Tolerances_LowerCutoff", -1e20)
@@ -107,17 +91,7 @@ set_optimizer_attribute(model, "CPXPARAM_Conflict_Display", 2)
 optimize!(model)
 println("Nombre de variables x: ", length(all_variables(model)))
 
-if termination_status(model) == MOI.OPTIMAL
-    println("Optimal objective value: ", objective_value(model))
-    x_sol = value.(model[:x])
-    solution = [(i, j) for i in 1:n, j in 1:n if value(x_sol[i, j]) > 0.5]
-    println(solution)
 
-else
-    println("No optimal solution found.")
-end
-
-"""
 if termination_status(model) == MOI.OPTIMAL
     println("Optimal objective value: ", objective_value(model))
     x_sol = value.(model[:x])
@@ -128,11 +102,23 @@ if termination_status(model) == MOI.OPTIMAL
     solution_x = [(i, j) for i in 2:n, j in 2:n if value(x_sol[i, j]) > 0.5]
     solution_x0 =  [(1,j) for j in 2:n if value(x0_sol[j]) > 0.5]
     println(solution_x, solution_x0)
-    println([i for i in 2:n if value(p_sol[i]) < 0.5])
-    println([value(t_sol[i]) for i in 2:n])
+    println("Les sommets peak sont: ", [i for i in 2:n if value(p_sol[i]) > 0.5])
+    println("Les valeurs de t sont : ",[value(t_sol[i]) for i in 2:n])
 
 else
     println("⚠️ Le modèle est infaisable. Analyse des conflits en cours...")
     compute_conflict!(model)  # Active l'analyse d'infaisabilité
 end
+
+"""
+if termination_status(model) == MOI.OPTIMAL
+    println("Optimal objective value: ", objective_value(model))
+    x_sol = value.(model[:x])
+    solution = [(i, j) for i in 1:n, j in 1:n if value(x_sol[i, j]) > 0.5]
+    println(solution)
+
+else
+    println("No optimal solution found.")
+end
+
 """
