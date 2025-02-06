@@ -3,7 +3,7 @@ using JuMP, CPLEX, LinearAlgebra
 
 include("instance.jl")
 
-instance = read_instance("../data/n_6-euclidean_true")
+instance = read_instance("../data/n_10-euclidean_true")
 
 function flow_model(I::Instance)
 
@@ -44,8 +44,7 @@ function build_BPF_model(I::Instance)
     
     @variable(model, u[i=2:n-1]>=0, Int)
             
-
-    @constraint(model, [i in 2:n], sum(x[:, i]) - p[i] == 1) 
+    @constraint(model, [i in 2:n], sum(x[:, i])+x_0[i] - p[i] == 1) 
 
     @constraint(model, [i in 2:n], sum(x[i, :]) + p[i] == 1) 
 
@@ -59,17 +58,33 @@ function build_BPF_model(I::Instance)
 
     @constraint(model, [i in 2:n], t[i] <= I.capacity*p[i])
 
-    @constraint(model, sum(p) >= ceil(sum(I.demands)/I.capacity))
+    #@constraint(model, sum(p) >= ceil(sum(I.demands)/I.capacity))
 
-    @constraint(model, sum(x_0) >= 2*ceil(sum(I.demands)/I.capacity))
+    #@constraint(model, sum(x_0) >= 2*ceil(sum(I.demands)/I.capacity))
 
     @constraint(model, [i in 2:n-1], i <= u[i])
 
     @constraint(model, [i in 2:n-1], u[i] <= i*p[i] + (n-1)*(1-p[i]))
     
-    @constraint(model, [i in 2:n-1, j in 2:n-1, i!=j],u[i] - u[j] +(n-j-1)*x[i,j] <= n-j-1)
+    #@constraint(model, [i in 2:n-1, j in 2:n-1, i!=j],u[i] - u[j] +(n-j-1)*x[i,j] <= n-j-1)
     
     @constraint(model, [i in 2:n], x[i,i]==0)
+
+    #Rounded Peak Count Inequalities
+    @constraint(model, [j in 2:n], sum(p[k] for k in j:n) >= ceil(sum(I.demands[k]/I.capacity for k in j:n)))
+
+    #Contraintes qui renforcent la relaxation
+    for i in 2:n-1
+        for j in 2:n-1
+            if i<= j
+                @constraint(model, u[i] - u[j] + (n-j-1)*x[i,j] + (n-j-1)x[j,i] <= n-j-1)
+            else
+                @constraint(model, u[i] - u[j] + (n-j-1)*x[i,j] + (n-i-1)x[j,i] <= n-j-1)
+            end
+        end
+    end
+    
+    @constraint(model, [i in 2:n-1, j in 2:n-1], u[i] - u[j] + (n-j-1)*x[i,j] + (n-i-1)*p[i] <= n-j-1)
     
     @objective(model, Min, 
     sum(I.distances[i,j]*x[i,j] for i in 2:n, j in 2:n) + sum(x_0[j]*I.distances[1,j] for j in 2:n))
@@ -81,12 +96,6 @@ end
 model = build_BPF_model(instance)
 #model = flow_model(instance)
 
-set_optimizer_attribute(model, "CPXPARAM_Conflict_Algorithm", 1)  # Active l'analyse de conflit
-set_optimizer_attribute(model, "CPXPARAM_MIP_Tolerances_LowerCutoff", -1e20)
-set_optimizer_attribute(model, "CPXPARAM_MIP_Tolerances_UpperCutoff", 1e20)
-set_optimizer_attribute(model, "CPXPARAM_Conflict_Display", 2)  # Niveau de détail de l'analyse
-set_optimizer_attribute(model, "CPXPARAM_MIP_Display", 4)
-set_optimizer_attribute(model, "CPXPARAM_Conflict_Display", 2)
 
 optimize!(model)
 println("Nombre de variables x: ", length(all_variables(model)))
