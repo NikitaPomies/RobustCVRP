@@ -3,7 +3,8 @@ using JuMP, CPLEX, LinearAlgebra
 
 include("instance.jl")
 
-instance = read_instance("../data/n_20-euclidean_true")
+
+instance = read_instance("../data/n_40-euclidean_true")
 
 function find_one_route_clients(pairs::Vector{Tuple{Int,Int}}, n::Int64)
     point_to_depot = Dict()
@@ -134,7 +135,7 @@ function build_RCVRP_cuts_model(I::Instance)
     @constraint(model, sum(x[i, 1] for i in 2:n) >= ceil(sum(I.demands)/I.capacity) ) #We make sure we have enough tours to satisfy the demand
 
     #z constraint 
-    @constraint(model, obj_cstr, sum(I.distances[i, j] * x[i, j] for i in 1:n, j in 1:n if i != j) <= z)
+    @constraint(model, obj_cstr, sum(I.distances[i, j] * x[i, j] for i in 1:n, j in 1:n if i != j) <= z)gap with lo
 
     @constraint(model, [i in 1:n], x[i,i]==0)
     """
