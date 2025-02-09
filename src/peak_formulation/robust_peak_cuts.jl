@@ -1,10 +1,9 @@
 using JuMP, CPLEX, LinearAlgebra
 
 
-include("instance.jl")
+include("../instance.jl")
 
-
-instance = read_instance("../data/n_40-euclidean_true")
+instance = read_instance("../data/n_20-euclidean_true")
 
 function find_one_route_clients(pairs::Vector{Tuple{Int,Int}}, n::Int64)
     point_to_depot = Dict()
@@ -21,8 +20,11 @@ function find_one_route_clients(pairs::Vector{Tuple{Int,Int}}, n::Int64)
 end
 
 
-function selected_edges(x::Matrix{Float64}, n)
-    return Tuple{Int,Int}[(i, j) for i in 1:n, j in 1:n if x[i, j] > 0.5]
+function selected_edges(x , x_0, n)
+    c_to_c = Tuple{Int,Int}[(i,j) for i in 2:n, j in 2:n if x[i, j] > 0.5]
+    d_to_c = Tuple{Int,Int}[(1,j) for j in 2:n if x_0[j] > 0.5]
+    edges = vcat(c_to_c, d_to_c)
+    return edges
 end
 
 function fractional_knapsack(weights::Dict{Tuple{Int, Int}, Float64}, 
@@ -62,10 +64,10 @@ function fractional_knapsack(weights::Dict{Tuple{Int, Int}, Float64},
 end
 
 
-function solve_subproblem(I::Instance, x_bar)
+function solve_subproblem(I::Instance, x_bar, x_bar_0)
     n = length(I.demands)
 
-    selected_e = selected_edges(x_bar, n)
+    selected_e = selected_edges(x_bar,x_bar_0, n)
     
     values_1 = Dict((i, j) => 0. for i in 1:n, j in 1:n)
     for (i,j) in selected_e
@@ -89,19 +91,86 @@ function solve_subproblem(I::Instance, x_bar)
     
     #obj = sum((I.distances[i, j] + delta_1[i, j] * (I.th[i] + I.th[j]) + delta_2[i, j] * (I.th[i] * I.th[j])) * x_bar[i, j] for i in 1:n, j in 1:n if i != j)
     
-    obj = sum((I.distances[i, j]) * x_bar[i, j] for i in 1:n, j in 1:n if i != j)+val_1+val_2
+    obj = sum(I.distances[1,j]*x_bar_0[j] for j in 2:n) + sum((I.distances[i, j]) * x_bar[i, j] for i in 2:n, j in 2:n if i != j)+val_1+val_2
 
     return (obj=obj, delta_1_opt=delta_1, delta_2_opt=delta_2)
 
 end
+function build_BPF_cuts_model(I::Instance)
 
-function build_RCVRP_cuts_model(I::Instance)
+    # Create the model
+    model = Model(CPLEX.Optimizer)
+    set_time_limit_sec(model, 30)  # Limite à 60 secondes
 
+    @variable(model, z>=0)
     
+    @variable(model, x[i=2:n, j=2:n], Bin)  # Binary variable: 1 if arc (i, j) is used
+    @variable(model, p[i = 2:n], Bin)
+    @variable(model, t[i = 2:n]>=0, Int)  
+    @variable(model, x_0[j = 2:n]>=0, Int)
+    @constraint(model,[j in 2:n], x_0[j] <=2)
+   
+
+    @variable(model, f[i=2:n, j=2:n]>=0, Int)
+    
+    @variable(model, u[i=2:n-1]>=0, Int)
+            
+    @constraint(model, [i in 2:n], sum(x[:, i])+x_0[i] - p[i] == 1) 
+
+    @constraint(model, [i in 2:n], sum(x[i, :]) + p[i] == 1) 
+
+    @constraint(model, [i in 2:n], t[i] + sum(f[i,:]) == sum(f[:,i]) +I.demands[i])
+
+    @constraint(model, [i in 2:n, j in 2:n], I.demands[i]*x[i,j] <= f[i,j])
+
+    @constraint(model, [i in 2:n, j in 2:n], (I.capacity - I.demands[j])*x[i,j] >= f[i,j])
+
+    @constraint(model, [i in 2:n], I.demands[i]*p[i] <= t[i])
+
+    @constraint(model, [i in 2:n], t[i] <= I.capacity*p[i])
+
+    #@constraint(model, sum(p) >= ceil(sum(I.demands)/I.capacity))
+
+    #@constraint(model, sum(x_0) >= 2*ceil(sum(I.demands)/I.capacity))
+
+    @constraint(model, [i in 2:n-1], i <= u[i])
+
+    @constraint(model, [i in 2:n-1], u[i] <= i*p[i] + (n-1)*(1-p[i]))
+    
+    #@constraint(model, [i in 2:n-1, j in 2:n-1, i!=j],u[i] - u[j] +(n-j-1)*x[i,j] <= n-j-1)
+    
+    @constraint(model, [i in 2:n], x[i,i]==0)
+
+    #Rounded Peak Count Inequalities
+    @constraint(model, [j in 2:n], sum(p[k] for k in j:n) >= ceil(sum(I.demands[k]/I.capacity for k in j:n)))
+
+    #Contraintes qui renforcent la relaxation
+    for i in 2:n-1
+        for j in 2:n-1
+            if i<= j
+                @constraint(model, u[i] - u[j] + (n-j-1)*x[i,j] + (n-j-1)x[j,i] <= n-j-1)
+            else
+                @constraint(model, u[i] - u[j] + (n-j-1)*x[i,j] + (n-i-1)x[j,i] <= n-j-1)
+            end
+        end
+    end
+    
+    @constraint(model, [i in 2:n-1, j in 2:n-1], u[i] - u[j] + (n-j-1)*x[i,j] + (n-i-1)*p[i] <= n-j-1)
+    
+    @constraint(model, 
+    sum(I.distances[i,j]*x[i,j] for i in 2:n, j in 2:n) + sum(x_0[j]*I.distances[1,j] for j in 2:n) <= z)
+
+    @objective(model, Min, z)
+
+    return model
+end
+"""
+function build_peak_cuts_model(I::Instance)
+
     # Create the model
     model = Model(CPLEX.Optimizer)
     #set_optimizer_attribute(model, "TimeLimit", 5)
-    set_time_limit_sec(model, 30)  # Limite à 60 secondes
+
 
     # Decision variables
     @variable(model, z >= 0)
@@ -135,22 +204,17 @@ function build_RCVRP_cuts_model(I::Instance)
     @constraint(model, sum(x[i, 1] for i in 2:n) >= ceil(sum(I.demands)/I.capacity) ) #We make sure we have enough tours to satisfy the demand
 
     #z constraint 
-    @constraint(model, obj_cstr, sum(I.distances[i, j] * x[i, j] for i in 1:n, j in 1:n if i != j) <= z)gap with lo
+    @constraint(model, obj_cstr, sum(I.distances[i, j] * x[i, j] for i in 1:n, j in 1:n if i != j) <= z)
 
     @constraint(model, [i in 1:n], x[i,i]==0)
-    """
-    for i in 1:n
-        @constraint(model, x[i, i] == 0)
-    end
-    """
     @objective(model, Min, z)
 
     return model
 end
+"""
+model = build_BPF_cuts_model(instance)
 
-model = build_RCVRP_cuts_model(instance)
-
-function solve_RCVRP_iterative_cuts(I::Instance, model)
+function solve_BPF_iterative_cuts(I::Instance, model)
 
     MAXIMUM_ITERATIONS = 100
     #set_silent(model)
@@ -164,27 +228,18 @@ function solve_RCVRP_iterative_cuts(I::Instance, model)
         println("Iteration $(k)")
         #set_silent(model)
 
-
         @assert is_solved_and_feasible(model)
         lower_bound = objective_value(model)
         x_k = value.(model[:x])
-        ret = solve_subproblem(I, x_k)
-
-        println(lower_bound - ret.obj)
-        for i in 1:n
-            for j in 1:n
-                if ret.delta_1_opt[i, j] > 0
-                    println(x_k[i, j])
-                end
-            end
-        end
-
+        x_0_k = value.(model[:x_0])
+        ret = solve_subproblem(I, x_k, x_0_k)
+        
+        println("Gap with lower Bound ", ((ret.obj -lower_bound)/lower_bound)*100)
+                
         if lower_bound >= ret.obj
             break
         end
 
-        one_route = find_one_route_clients(selected_edges(x_k, n), n)
-        println(one_route)
         new_distances = zeros(n, n)
 
         for i in 1:n
@@ -202,24 +257,22 @@ function solve_RCVRP_iterative_cuts(I::Instance, model)
         end
 
         z = value.(model[:z])
-        println("sum before : ", z - sum(new_distances[i, j] * x_k[i, j] for i in 1:n, j in 1:n if i != j))
-        cut = @constraint(model, sum(new_distances[i, j] * model[:x][i, j] for i in 1:n, j in 1:n if i != j) <= model[:z])
-        #cut2 = @constraint(model, sum(new_distances_symetric[i, j] * model[:x][i, j] for i in 1:n, j in 1:n if i != j) <= model[:z])
-
+        println("sum before : ", z - sum(new_distances[i, j] * x_k[i, j] for i in 2:n, j in 2:n if i != j) - sum(new_distances[1,j]*x_0_k[j] for j in 2:n))
+        cut = @constraint(model, sum(new_distances[i, j] * model[:x][i, j] for i in 2:n, j in 2:n if i != j) + sum(new_distances[1,j]*model[:x_0][j] for j in 2:n) <= model[:z])
+        
         set_silent(model)
         optimize!(model)
         x_k = value.(model[:x])
         z = value.(model[:z])
 
-
-        println("sum after : ", z - sum(new_distances[i, j] * x_k[i, j] for i in 1:n, j in 1:n if i != j))
+        println("sum after : ", z - sum(new_distances[i, j] * x_k[i, j] for i in 2:n, j in 2:n if i != j) - sum(new_distances[1, j] * x_0_k[j] for j in 2:n ))
         println("VRP value :", z)
 
     end
     return model
 end
 
-function solve_RCVRP_callback_cuts(I::Instance, model)
+function solve_BPF_callback_cuts(I::Instance, model)
 
     function cut_callback(cb_data)
         status = callback_node_status(cb_data, model)
@@ -228,9 +281,15 @@ function solve_RCVRP_callback_cuts(I::Instance, model)
         end
 
         x_k = callback_value.(cb_data, model[:x])
+
+        x_0_k = callback_value.(cb_data, model[:x_0])
+
         lower_bound = callback_value.(cb_data, model[:z])
 
-        ret = solve_subproblem(I, x_k)
+        ret = solve_subproblem(I, x_k, x_0_k)
+
+        println("Gap with lower Bound ", ((ret.obj -lower_bound)/lower_bound)*100)
+        
         if lower_bound >= ret.obj
             return
         end
@@ -239,15 +298,6 @@ function solve_RCVRP_callback_cuts(I::Instance, model)
         for i in 1:n
             for j in 1:n
                 new_distances[i, j] = I.distances[i, j] + ret.delta_1_opt[i, j] * (I.th[i] + I.th[j]) + ret.delta_2_opt[i, j] * (I.th[i] * I.th[j])
-                #=                if (new_distances[j, i] < new_distances[i, j])
-                                   new_distances[j, i] = new_distances[i, j] # symmetric 
-                               end
-                               if (new_distances[j, i] > new_distances[i, j])
-                                   new_distances[i, j] = new_distances[j, i] # symmetric 
-                               end =#
-                #=   if ((x_k[i, j] > 0) && (ret.delta_1_opt[i, j] > 0 || ret.delta_2_opt[i, j] > 0))
-                      println("Modifying distance ", i, j)
-                  end =#
             end
         end
 
@@ -255,16 +305,14 @@ function solve_RCVRP_callback_cuts(I::Instance, model)
         for i in 1:n
             for j in 1:n
                 new_distances_symetric[i, j] = I.distances[j, i] + ret.delta_1_opt[j, i] * (I.th[i] + I.th[j]) + ret.delta_2_opt[j, i] * (I.th[i] * I.th[j])
-
             end
         end
 
-
-        cut = @build_constraint(sum(new_distances[i, j] * model[:x][i, j] for i in 1:n, j in 1:n if i != j) <= model[:z])
-        cut2 = @build_constraint( sum(new_distances_symetric[i, j] * model[:x][i, j] for i in 1:n, j in 1:n if i != j) <= model[:z])
+        cut = @build_constraint(sum(new_distances[i, j] * model[:x][i, j] for i in 2:n, j in 2:n if i != j) + sum(new_distances[1,j]*model[:x_0][j] for j in 2:n) <= model[:z])
+        #cut2 = @build_constraint( sum(new_distances_symetric[i, j] * model[:x][i, j] for i in 1:n, j in 1:n if i != j) <= model[:z])
 
         MOI.submit(model, MOI.LazyConstraint(cb_data), cut)
-        MOI.submit(model, MOI.LazyConstraint(cb_data), cut2)
+        #MOI.submit(model, MOI.LazyConstraint(cb_data), cut2)
     end
 
     set_attribute(
@@ -279,18 +327,25 @@ end
 
 # Solve the model
 
-#solved_model = solve_RCVRP_iterative_cuts(instance, model)
-solved_model = solve_RCVRP_callback_cuts(instance, model)
+#solved_model = solve_BPF_iterative_cuts(instance, model)
+solved_model = solve_BPF_callback_cuts(instance, model)
 
 # Extract and print the solution
-if termination_status(solved_model) == MOI.OPTIMAL
-    println("Optimal objective value: ", objective_value(solved_model))
-    x_sol = value.(solved_model[:x])
-    solution = [(i, j) for i in 1:n, j in 1:n if value(x_sol[i, j]) > 0.5]
-    println(solution)
+if termination_status(model) == MOI.OPTIMAL
+    println("Optimal objective value: ", objective_value(model))
+    x_sol = value.(model[:x])
+    x0_sol = value.(model[:x_0])
+    p_sol = value.(model[:p])
+    t_sol = value.(model[:t])
+
+    solution_x = [(i, j) for i in 2:n, j in 2:n if value(x_sol[i, j]) > 0.5]
+    solution_x0 =  [(1,j) for j in 2:n if value(x0_sol[j]) > 0.5]
+    println(solution_x, solution_x0)
+    println("Les sommets peak sont: ", [i for i in 2:n if value(p_sol[i]) > 0.5])
+    println("Les valeurs de t sont : ",[value(t_sol[i]) for i in 2:n])
 
 else
-    println("No optimal solution found.")
+    println("⚠️ Le modèle est infaisable. Analyse des conflits en cours...")
+    compute_conflict!(model)  # Active l'analyse d'infaisabilité
 end
-
 

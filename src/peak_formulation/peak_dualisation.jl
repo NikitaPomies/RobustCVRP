@@ -1,48 +1,40 @@
+
 using JuMP, CPLEX, LinearAlgebra
 
+include("../instance.jl")
 
-include("instance.jl")
-
-instance = read_instance("../data/n_10-euclidean_true")
-
-function flow_model(I::Instance)
-
-    model = Model(CPLEX.Optimizer)
-
-    @variable(model, x[i=1:n,j=1:n], Bin)
-    @variable(model, f[i=1:n,j=1:n]>=0, Int)
-
-    @constraint(model, [i in 2:n], sum(x[:, i]) == 1) 
-    @constraint(model, [i in 2:n], sum(x[i, :]) == 1)  
-
-    @constraint(model, sum(x) >= 2*ceil(sum(I.demands)/I.capacity))
-
-    @constraint(model, [i in 2:n], sum(f[i, :]) == sum(f[:,i]) + I.demands[i]) 
-    @constraint(model, [i in 1:n, j in 1:n], I.demands[i]*x[i,j] <= f[i,j])
-    @constraint(model, [i in 1:n, j in 1:n], (I.capacity - I.demands[j])*x[i,j] >= f[i,j])
-
-    @objective(model, Min, sum(I.distances[i,j]*x[i,j] for i in 1:n, j in 1:n))
-
-    return model
-
-end
+instance  = read_instance("../data/n_10-euclidean_true")
 
 
-function build_BPF_model(I::Instance)
+function build_peak_dual_model(I::Instance)
 
+    n = length(I.demands)
     # Create the model
     model = Model(CPLEX.Optimizer)
+    #set_optimizer_attribute(model, "TimeLimit", 5)
+
+
+    # Decision variables
     
     @variable(model, x[i=2:n, j=2:n], Bin)  # Binary variable: 1 if arc (i, j) is used
-    @variable(model, p[i = 2:n], Bin)
-    @variable(model, t[i = 2:n]>=0, Int)  
     @variable(model, x_0[j = 2:n]>=0, Int)
     @constraint(model,[j in 2:n], x_0[j] <=2)
+   
+
+    @variable(model, p[i = 2:n], Bin)
+    @variable(model, t[i = 2:n]>=0, Int)  
+
+    @variable(model, 0 <= mu_1[i=1:n, j=1:n])
+    @variable(model, 0 <= mu_2[i=1:n, j=1:n])
+    @variable(model, lambda_1 >= 0)
+    @variable(model, lambda_2 >= 0)
    
 
     @variable(model, f[i=2:n, j=2:n]>=0, Int)
     
     @variable(model, u[i=2:n-1]>=0, Int)
+
+    #Contraintes sur X
             
     @constraint(model, [i in 2:n], sum(x[:, i])+x_0[i] - p[i] == 1) 
 
@@ -85,22 +77,39 @@ function build_BPF_model(I::Instance)
     end
     
     @constraint(model, [i in 2:n-1, j in 2:n-1], u[i] - u[j] + (n-j-1)*x[i,j] + (n-i-1)*p[i] <= n-j-1)
+
+    #Contraintes du DUAL
+    for i in 2:n
+        for j in 2:n
+            if (i != j)
+                @constraint(model, mu_1[i, j] + lambda_1 >= (I.th[i] + I.th[j]) * x[i, j])
+                @constraint(model, mu_2[i, j] + lambda_2 >= (I.th[i] * I.th[j]) * x[i, j])
+            end
+        end
+    end
+    for j in 2:n
+        @constraint(model, mu_1[1, j] + lambda_1 >= (I.th[1] + I.th[j]) * x_0[j])
+        @constraint(model, mu_2[1, j] + lambda_2 >= (I.th[1] * I.th[j]) * x_0[j])
+    end
     
-    @objective(model, Min, 
-    sum(I.distances[i,j]*x[i,j] for i in 2:n, j in 2:n) + sum(x_0[j]*I.distances[1,j] for j in 2:n))
+    @objective(model, Min, sum(I.distances[i,j]*x[i,j] for i in 2:n, j in 2:n) + sum(x_0[j]*I.distances[1,j] for j in 2:n) + lambda_1 * I.T + lambda_2 * I.T^2 + sum(mu_1 + 2 * mu_2))
 
     return model
 end
 
 
-model = build_BPF_model(instance)
-#model = flow_model(instance)
+
+# Create the model
+model = build_peak_dual_model(instance)
+#set_optimizer_attribute(model, "TimeLimit", 5)
+
 
 
 optimize!(model)
-println("Nombre de variables x: ", length(all_variables(model)))
 
+# Solve the model
 
+# Extract and print the solution
 if termination_status(model) == MOI.OPTIMAL
     println("Optimal objective value: ", objective_value(model))
     x_sol = value.(model[:x])
@@ -115,19 +124,5 @@ if termination_status(model) == MOI.OPTIMAL
     println("Les valeurs de t sont : ",[value(t_sol[i]) for i in 2:n])
 
 else
-    println("⚠️ Le modèle est infaisable. Analyse des conflits en cours...")
-    compute_conflict!(model)  # Active l'analyse d'infaisabilité
-end
-
-"""
-if termination_status(model) == MOI.OPTIMAL
-    println("Optimal objective value: ", objective_value(model))
-    x_sol = value.(model[:x])
-    solution = [(i, j) for i in 1:n, j in 1:n if value(x_sol[i, j]) > 0.5]
-    println(solution)
-
-else
     println("No optimal solution found.")
 end
-
-"""

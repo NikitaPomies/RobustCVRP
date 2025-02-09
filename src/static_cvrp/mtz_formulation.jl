@@ -1,7 +1,7 @@
 
 using JuMP, CPLEX, LinearAlgebra
 
-file_path = "data/P-n40-k5.vrp"  # Replace with your instance file path
+file_path = "../data/P-n40-k5.vrp"  # Replace with your instance file path
 name, comment, capacity, n, coords, demands, depot, distances = parse_cvrp_instance(file_path)
 
 

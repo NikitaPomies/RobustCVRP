@@ -1,7 +1,7 @@
 
 using JuMP, CPLEX, LinearAlgebra
 
-include("instance.jl")
+include("../instance.jl")
 
 instance  = read_instance("../data/n_10-euclidean_true")
 
