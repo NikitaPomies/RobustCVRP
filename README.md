@@ -13,17 +13,17 @@ We tested four different methods :
 The uncertainty set it described as follow : 
 
 
-$$
+```math
 \mathcal{U} = \{ t'_{ij} = t_{ij} +  \delta_{ij}^1 (\hat{t}_i + \hat{t}_j) + \delta_{ij}^2 \,  \hat{t}_i \, \hat{t}_j  \: \text{ s.t} 
-$$
-$$
+```
+
+```math
 \sum_{(i,j)\in A} \delta_{ij}^1 \leq T  , \sum_{(i,j)\in A} \delta_{ij}^2 \leq T^{\,2}, \delta_{ij}^1 \in [0,1], \;  \delta_{ij}^2 \in [0,2] \;\forall (i,j) \in A \}
-$$
+```
 
-T, $(\hat{t}_i)_{i \in [n]}$ are parameters of the problem
+T and $\hat{t}$ are parameters of the problem 
 
-
-$$
+```math
 \begin{align*}
  {min}_{\,x}~& \; {max}_{\, \delta^1,\delta^2} \sum_{(i,j)\in A} t_{ij} \, x_{ij} + (\delta_{ij}^1(\hat{t}_i + \hat{t}_j) + \delta_{ij}^2 \hat{t_i}\hat{t_j}) \, x_{ij} & \\
  {s.t} &\sum_{i \in [n]} x_{ij} = 1& \forall j \in [2,n]\\
@@ -35,4 +35,4 @@ $$
 & x_{ij} \in \{0,1\}& \forall (i,j) \in A\\
 & \delta_{ij}^1 \in [0,1], \delta_{ij}^2 \in [0,2] & \forall (i,j) \in A 
 \end{align*}
-$$
+```
