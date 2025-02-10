@@ -1,16 +1,16 @@
 
-using JuMP, CPLEX, LinearAlgebra
+using JuMP, Gurobi, LinearAlgebra
 
 include("../instance.jl")
 
-instance  = read_instance("../data/n_10-euclidean_true")
+instance  = read_instance("../../data/n_15-euclidean_true")
 
 
 function build_peak_dual_model(I::Instance)
 
     n = length(I.demands)
     # Create the model
-    model = Model(CPLEX.Optimizer)
+    model = Model(Gurobi.Optimizer)
     #set_optimizer_attribute(model, "TimeLimit", 5)
 
 

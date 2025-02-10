@@ -1,9 +1,9 @@
-using JuMP, CPLEX, LinearAlgebra
+using JuMP, Gurobi, LinearAlgebra
 
 
 include("../instance.jl")
 
-instance = read_instance("../data/n_20-euclidean_true")
+instance = read_instance("../../data/n_9-euclidean_true")
 
 function find_one_route_clients(pairs::Vector{Tuple{Int,Int}}, n::Int64)
     point_to_depot = Dict()
@@ -22,8 +22,10 @@ end
 
 function selected_edges(x , x_0, n)
     c_to_c = Tuple{Int,Int}[(i,j) for i in 2:n, j in 2:n if x[i, j] > 0.5]
-    d_to_c = Tuple{Int,Int}[(1,j) for j in 2:n if x_0[j] > 0.5]
-    edges = vcat(c_to_c, d_to_c)
+
+    d_to_c = Tuple{Int,Int}[(1,j) for j in 2:n if  x_0[j] > 0.5]
+    one_route = Tuple{Int,Int}[(j,1) for j in 2:n if  x_0[j] > 1]
+    edges = vcat(c_to_c, d_to_c,one_route)
     return edges
 end
 
@@ -99,8 +101,8 @@ end
 function build_BPF_cuts_model(I::Instance)
 
     # Create the model
-    model = Model(CPLEX.Optimizer)
-    set_time_limit_sec(model, 30)  # Limite à 60 secondes
+    model = Model(Gurobi.Optimizer)
+    set_time_limit_sec(model, 1000)  # Limite à 60 secondes
 
     @variable(model, z>=0)
     
@@ -288,7 +290,7 @@ function solve_BPF_callback_cuts(I::Instance, model)
 
         ret = solve_subproblem(I, x_k, x_0_k)
 
-        println("Gap with lower Bound ", ((ret.obj -lower_bound)/lower_bound)*100)
+        #println("Gap with lower Bound ", ((ret.obj -lower_bound)/lower_bound)*100)
         
         if lower_bound >= ret.obj
             return

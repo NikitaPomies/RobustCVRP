@@ -1,10 +1,9 @@
-using JuMP, CPLEX, LinearAlgebra
+using JuMP, Gurobi, LinearAlgebra
 
 
 include("../instance.jl")
 
 
-instance = read_instance("../data/n_40-euclidean_true")
 
 function find_one_route_clients(pairs::Vector{Tuple{Int,Int}}, n::Int64)
     point_to_depot = Dict()
@@ -99,9 +98,9 @@ function build_RCVRP_cuts_model(I::Instance)
 
     
     # Create the model
-    model = Model(CPLEX.Optimizer)
+    model = Model(Gurobi.Optimizer)
     #set_optimizer_attribute(model, "TimeLimit", 5)
-    set_time_limit_sec(model, 30)  # Limite à 60 secondes
+    set_time_limit_sec(model, 180)  # Limite à 60 secondes
 
     # Decision variables
     @variable(model, z >= 0)
@@ -148,7 +147,7 @@ function build_RCVRP_cuts_model(I::Instance)
     return model
 end
 
-model = build_RCVRP_cuts_model(instance)
+
 
 function solve_RCVRP_iterative_cuts(I::Instance, model)
 
@@ -277,20 +276,61 @@ function solve_RCVRP_callback_cuts(I::Instance, model)
 
 end
 
-# Solve the model
+# # Solve the model
+# instance = read_instance("../../data/n_6-euclidean_true")
 
-#solved_model = solve_RCVRP_iterative_cuts(instance, model)
-solved_model = solve_RCVRP_callback_cuts(instance, model)
+# model = build_RCVRP_cuts_model(instance)
+# #solved_model = solve_RCVRP_iterative_cuts(instance, model)
+# solved_model = solve_RCVRP_callback_cuts(instance, model)
 
-# Extract and print the solution
-if termination_status(solved_model) == MOI.OPTIMAL
-    println("Optimal objective value: ", objective_value(solved_model))
-    x_sol = value.(solved_model[:x])
-    solution = [(i, j) for i in 1:n, j in 1:n if value(x_sol[i, j]) > 0.5]
-    println(solution)
+# # Extract and print the solution
+# if termination_status(solved_model) == MOI.OPTIMAL
+#     println("Optimal objective value: ", objective_value(solved_model))
+#     x_sol = value.(solved_model[:x])
+#     solution = [(i, j) for i in 1:n, j in 1:n if value(x_sol[i, j]) > 0.5]
+#     println(solution)
 
-else
-    println("No optimal solution found.")
+# else
+#     println("No optimal solution found.")
+# end
+
+
+using CSV
+using DataFrames
+
+# Define paths and instance prefixes
+data_folder = "../../data/"
+instance_prefix = "n_"
+#instance_range =  vcat(6, 14:20)
+instance_range =  6:14
+
+# Create a DataFrame to store results
+results = DataFrame(instance = String[], obj_value = Float64[], time = Float64[])
+
+# Function to read, build, and solve an instance
+function solve_instance(instance_name)
+    instance_path = joinpath(data_folder, instance_name)
+    instance = read_instance(instance_path)
+    model = build_RCVRP_cuts_model(instance)
+    solved_model, solve_time = @timed solve_RCVRP_callback_cuts(instance, model)
+    #solved_model, solve_time = @timed solve_RCVRP_iterative_cuts(instance, model)
+    return instance_name, objective_value(solved_model), solve_time
 end
 
+# Iterate through the instances
+for i in instance_range
+    instance_name = "$instance_prefix$(i)-euclidean_true"
+    try
+        instance, obj_value, time = solve_instance(instance_name)
+        push!(results, (instance, obj_value, time))
+        println("Solved $instance: Objective = $obj_value, Time = $time seconds")
+    catch e
+        println("Error solving $instance_name: $e")
+    end
+end
 
+# Save results to CSV
+output_file = "results.csv"
+CSV.write(output_file, results)
+
+println("Results saved to $output_file")
