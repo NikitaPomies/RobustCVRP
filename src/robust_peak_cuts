@@ -3,14 +3,15 @@ using JuMP, CPLEX, LinearAlgebra
 
 include("instance.jl")
 
-instance = read_instance("../data/n_10-euclidean_true")
+instance = read_instance("../data/n_8-euclidean_true")
 
 function selected_edges(x , x_0, n)
     c_to_c = Tuple{Int,Int}[(i,j) for i in 2:n, j in 2:n if x[i, j] > 0.5]
     d_to_c = Tuple{Int,Int}[(1,j) for j in 2:n if x_0[j] > 0.5]
     c_to_d = Tuple{Int,Int}[(j,1) for j in 2:n if x_0[j] > 1]
-    edges = vcat(c_to_c, d_to_c,c_to_d)
-    #edges = vcat(c_to_c, d_to_c)
+    edges = vcat(c_to_c, d_to_c, c_to_d)
+    #println(edges)
+    #edges = vcat(edges, c_to_d)
     return edges
 end
 
@@ -74,7 +75,6 @@ function solve_subproblem(I::Instance, x_bar, x_bar_0)
     for (i,j) in selected_e
         values_2[i,j] = Float64(I.th[i]*I.th[j]) 
     end
-
     
     weights_2 = Dict((i, j) => 1.0 for i in 1:n, j in 1:n)
 
@@ -97,6 +97,50 @@ function solve_subproblem(I::Instance, x_bar, x_bar_0)
     return (obj=obj, delta_1_opt=delta_1, delta_2_opt=delta_2)
 
 end
+function solve_subproblem_solver(I::Instance, x_bar, x_bar_0)
+    n = length(I.demands)
+    m = Model(CPLEX.Optimizer)
+    set_silent(m)
+
+    @variable(m, delta_1[i=2:n, j=2:n] >=0)
+    
+    @variable(m, delta_0_1[j=2:n] >=0)
+
+    @variable(m, delta_2[i=2:n, j=2:n] >=0)
+    
+    @variable(m, delta_0_2[j=2:n] >=0)
+
+    @constraint(m, sum(delta_1)+sum(delta_0_1) <= I.T)
+
+    @constraint(m, sum(delta_2)+sum(delta_0_2) <= I.T*I.T)
+
+    @constraint(m, [i in 2:n, j in 2:n], delta_1[i,j] <= 1)
+
+    @constraint(m, [j in 2:n], delta_0_1[j] <= 1)
+    
+    @constraint(m, [i in 2:n, j in 2:n], delta_2[i,j] <= 2)
+
+    @constraint(m, [j in 2:n], delta_0_2[j] <= 2)
+
+    @objective(m, Max, 
+    sum(x_bar[i,j]*(I.distances[i,j] + (I.th[i] + I.th[j])*delta_1[i,j] + delta_2[i,j]*I.th[i]*I.th[j]) for i in 2:n, j in 2:n) + 
+    sum(x_bar_0[j]*(I.distances[1,j] + (I.th[1]+I.th[j])*delta_0_1[j] + I.th[1]*I.th[j]*delta_0_2[j]) for j in 2:n) 
+    )
+
+    optimize!(m)
+
+    obj = objective_value(m)
+
+    delta_1 = value.(delta_1)
+    delta_2 = value.(delta_2)
+
+    delta_0_1 = value.(delta_0_1)
+    delta_0_2 = value.(delta_0_2)
+
+    return (obj=obj, delta_1_opt=delta_1, delta_2_opt=delta_2, delta_0_1_opt=delta_0_1, delta_0_2_opt=delta_0_2)
+  
+end
+
 function build_BPF_cuts_model(I::Instance)
 
     model = Model(CPLEX.Optimizer)
@@ -157,56 +201,10 @@ function build_BPF_cuts_model(I::Instance)
 
     @objective(model, Min, z)
 
-    return model
-end
-"""
-function build_peak_cuts_model(I::Instance)
-
-    # Create the model
-    model = Model(CPLEX.Optimizer)
-    #set_optimizer_attribute(model, "TimeLimit", 5)
-
-
-    # Decision variables
-    @variable(model, z >= 0)
-    @variable(model, x[i=1:n, j=1:n], Bin)  # Binary variable: 1 if arc (i, j) is used
-    @variable(model, u[1:n] >= 0)           # MTZ variables: auxiliary variables for subtour elimination
-
-    @constraint(model, [j in 2:n], sum(x[:, j]) == 1)  # Each node is visited once
-    @constraint(model, [i in 2:n], sum(x[i, :]) == 1)  # Each node is visited once
-
-    # MTZ subtour elimination constraints
-    for i in 2:n, j in 2:n
-        if i != j
-            @constraint(model, u[i] - u[j] <= (I.capacity) * (1 - x[i, j]) - I.demands[j])
-        end
-    end
-    
-    for i in 2:n, j in 2:n
-        if i != j
-            @constraint(model, x[i, j] + x[j, i] <= 1)
-        end
-    end
-    
-    @constraint(model, [i in 2:n], I.demands[i] <= u[i] <= I.capacity)
-
-    @constraint(model, sum(x[1, j] for j in 2:n) == sum(x[j, 1] for j in 2:n))
-
-    # Constraints
-    #@constraint(model, sum(x[1, j] for j in 2:n) == 2)  # 8 vehicles leave the depot
-    #@constraint(model, sum(x[i, 1] for i in 2:n) == 2)  # 8 vehicles return to the depot
-
-    @constraint(model, sum(x[i, 1] for i in 2:n) >= ceil(sum(I.demands)/I.capacity) ) #We make sure we have enough tours to satisfy the demand
-
-    #z constraint 
-    @constraint(model, obj_cstr, sum(I.distances[i, j] * x[i, j] for i in 1:n, j in 1:n if i != j) <= z)
-
-    @constraint(model, [i in 1:n], x[i,i]==0)
-    @objective(model, Min, z)
 
     return model
 end
-"""
+
 model = build_BPF_cuts_model(instance)
 
 function solve_BPF_iterative_cuts(I::Instance, model)
@@ -274,7 +272,8 @@ function solve_BPF_callback_cuts(I::Instance, model)
 
         lower_bound = callback_value.(cb_data, model[:z])
 
-        ret = solve_subproblem(I, x_k, x_0_k)
+        #ret = solve_subproblem(I, x_k, x_0_k)
+        ret = solve_subproblem_solver(I, x_k, x_0_k)
 
         #println("Gap with lower Bound ", ((ret.obj -lower_bound)/lower_bound)*100)
         
@@ -283,18 +282,23 @@ function solve_BPF_callback_cuts(I::Instance, model)
         end
 
         new_distances = zeros(n, n)
+
         for i in 2:n
             for j in 2:n
                 new_distances[i, j] = I.distances[i, j] + ret.delta_1_opt[i, j] * (I.th[i] + I.th[j]) + ret.delta_2_opt[i, j] * (I.th[i] * I.th[j])
             end
         end
+        
+        #for j in 2:n
+        #    new_distances[1,j] = I.distances[1, j] + ret.delta_1_opt[1, j] *(I.th[1] + I.th[j]) + ret.delta_2_opt[1, j]*(I.th[1] * I.th[j])
+        #end
 
         for j in 2:n
-            new_distances[1,j] = I.distances[1, j] + ret.delta_1_opt[1, j] *(I.th[1] + I.th[j]) + ret.delta_2_opt[1, j]*(I.th[1] * I.th[j])
+            new_distances[1,j] = I.distances[1, j] + ret.delta_0_1_opt[j] *(I.th[1] + I.th[j]) + ret.delta_0_2_opt[j]*(I.th[1] * I.th[j])
         end
         
         cut = @build_constraint(sum(new_distances[i, j] * model[:x][i, j] for i in 2:n, j in 2:n if i != j) +
-                                             sum(new_distances[1,j]*model[:x_0][j] for j in 2:n) <= model[:z])
+                                             sum((new_distances[1,j])*model[:x_0][j] for j in 2:n) <= model[:z])
 
         MOI.submit(model, MOI.LazyConstraint(cb_data), cut)
     end

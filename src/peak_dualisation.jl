@@ -3,7 +3,7 @@ using JuMP, CPLEX, LinearAlgebra
 
 include("instance.jl")
 
-instance  = read_instance("../data/n_30-euclidean_true")
+instance  = read_instance("../data/n_8-euclidean_true")
 
 
 function build_peak_dual_model(I::Instance)
