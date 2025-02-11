@@ -3,27 +3,14 @@ using JuMP, CPLEX, LinearAlgebra
 
 include("instance.jl")
 
-instance = read_instance("../data/n_20-euclidean_true")
-
-function find_one_route_clients(pairs::Vector{Tuple{Int,Int}}, n::Int64)
-    point_to_depot = Dict()
-    depot_point_to = Dict()
-    for pair in pairs
-        if pair[1] == 1
-            depot_point_to[pair[2]] = true
-        end
-        if pair[2] == 1
-            point_to_depot[pair[1]] = true
-        end
-    end
-    return [i for i in 1:n if get(point_to_depot, i, false) && get(depot_point_to, i, false)]
-end
-
+instance = read_instance("../data/n_10-euclidean_true")
 
 function selected_edges(x , x_0, n)
     c_to_c = Tuple{Int,Int}[(i,j) for i in 2:n, j in 2:n if x[i, j] > 0.5]
     d_to_c = Tuple{Int,Int}[(1,j) for j in 2:n if x_0[j] > 0.5]
-    edges = vcat(c_to_c, d_to_c)
+    c_to_d = Tuple{Int,Int}[(j,1) for j in 2:n if x_0[j] > 1]
+    edges = vcat(c_to_c, d_to_c,c_to_d)
+    #edges = vcat(c_to_c, d_to_c)
     return edges
 end
 
@@ -68,54 +55,68 @@ function solve_subproblem(I::Instance, x_bar, x_bar_0)
     n = length(I.demands)
 
     selected_e = selected_edges(x_bar,x_bar_0, n)
+    #println("Arêtes selectionnées pour le sous problème: ",selected_e)
     
     values_1 = Dict((i, j) => 0. for i in 1:n, j in 1:n)
+
     for (i,j) in selected_e
         values_1[i,j] = Float64(I.th[i]+I.th[j]) 
     end
-    
+       
     weights_1 = Dict((i, j) => 1.0 for i in 1:n, j in 1:n)
+
     capacity_1 = Float64(I.T)
     
     val_1, delta_1 = fractional_knapsack(weights_1, values_1, capacity_1)
 
     values_2 = Dict((i, j) => 0. for i in 1:n, j in 1:n)
+
     for (i,j) in selected_e
         values_2[i,j] = Float64(I.th[i]*I.th[j]) 
     end
+
     
     weights_2 = Dict((i, j) => 1.0 for i in 1:n, j in 1:n)
+
     capacity_2 = Float64(I.T*I.T)
-    
+
+    for j in 2:n
+        if x_bar_0[j] >1
+            #values_1[1,j] = 2*values_1[1,j]
+            #values_2[1,j] = 2*values_2[1,j]
+            #weights_1[1,j] = 2*weights_1[1,j]
+            #weights_2[1,j] = 2*weights_2[1,j]
+        end
+    end
+
+    val_1, delta_1 = fractional_knapsack(weights_1, values_1, capacity_1)
     val_2, delta_2 = fractional_knapsack(weights_2, values_2, capacity_2, 2.0)
     
-    #obj = sum((I.distances[i, j] + delta_1[i, j] * (I.th[i] + I.th[j]) + delta_2[i, j] * (I.th[i] * I.th[j])) * x_bar[i, j] for i in 1:n, j in 1:n if i != j)
-    
-    obj = sum(I.distances[1,j]*x_bar_0[j] for j in 2:n) + sum((I.distances[i, j]) * x_bar[i, j] for i in 2:n, j in 2:n if i != j)+val_1+val_2
+    obj = sum(I.distances[1,j]*x_bar_0[j] for j in 2:n) + sum((I.distances[i, j]) * x_bar[i, j] for i in 2:n, j in 2:n if i != j) + val_1 + val_2
 
     return (obj=obj, delta_1_opt=delta_1, delta_2_opt=delta_2)
 
 end
 function build_BPF_cuts_model(I::Instance)
 
-    # Create the model
     model = Model(CPLEX.Optimizer)
-    set_time_limit_sec(model, 30)  # Limite à 60 secondes
-
+   
     @variable(model, z>=0)
     
-    @variable(model, x[i=2:n, j=2:n], Bin)  # Binary variable: 1 if arc (i, j) is used
+    @variable(model, x[i=2:n, j=2:n], Bin)  
+    
     @variable(model, p[i = 2:n], Bin)
+    
     @variable(model, t[i = 2:n]>=0, Int)  
+
     @variable(model, x_0[j = 2:n]>=0, Int)
     @constraint(model,[j in 2:n], x_0[j] <=2)
    
-
     @variable(model, f[i=2:n, j=2:n]>=0, Int)
     
     @variable(model, u[i=2:n-1]>=0, Int)
             
-    @constraint(model, [i in 2:n], sum(x[:, i])+x_0[i] - p[i] == 1) 
+    @constraint(model, [i in 2:n], sum(x[:, i])+ x_0[i] - p[i] == 1) 
 
     @constraint(model, [i in 2:n], sum(x[i, :]) + p[i] == 1) 
 
@@ -129,15 +130,9 @@ function build_BPF_cuts_model(I::Instance)
 
     @constraint(model, [i in 2:n], t[i] <= I.capacity*p[i])
 
-    #@constraint(model, sum(p) >= ceil(sum(I.demands)/I.capacity))
-
-    #@constraint(model, sum(x_0) >= 2*ceil(sum(I.demands)/I.capacity))
-
     @constraint(model, [i in 2:n-1], i <= u[i])
 
     @constraint(model, [i in 2:n-1], u[i] <= i*p[i] + (n-1)*(1-p[i]))
-    
-    #@constraint(model, [i in 2:n-1, j in 2:n-1, i!=j],u[i] - u[j] +(n-j-1)*x[i,j] <= n-j-1)
     
     @constraint(model, [i in 2:n], x[i,i]==0)
 
@@ -158,7 +153,7 @@ function build_BPF_cuts_model(I::Instance)
     @constraint(model, [i in 2:n-1, j in 2:n-1], u[i] - u[j] + (n-j-1)*x[i,j] + (n-i-1)*p[i] <= n-j-1)
     
     @constraint(model, 
-    sum(I.distances[i,j]*x[i,j] for i in 2:n, j in 2:n) + sum(x_0[j]*I.distances[1,j] for j in 2:n) <= z)
+    sum(I.distances[i,j]*x[i,j] for i in 2:n, j in 2:n if i!=j) + sum(x_0[j]*I.distances[1,j] for j in 2:n) <= z)
 
     @objective(model, Min, z)
 
@@ -232,6 +227,7 @@ function solve_BPF_iterative_cuts(I::Instance, model)
         lower_bound = objective_value(model)
         x_k = value.(model[:x])
         x_0_k = value.(model[:x_0])
+
         ret = solve_subproblem(I, x_k, x_0_k)
         
         println("Gap with lower Bound ", ((ret.obj -lower_bound)/lower_bound)*100)
@@ -245,14 +241,6 @@ function solve_BPF_iterative_cuts(I::Instance, model)
         for i in 1:n
             for j in 1:n
                 new_distances[i, j] = I.distances[i, j] + ret.delta_1_opt[i, j] * (I.th[i] + I.th[j]) + ret.delta_2_opt[i, j] * (I.th[i] * I.th[j])
-            end
-        end
-
-        new_distances_symetric = zeros(n, n)
-        for i in 1:n
-            for j in 1:n
-                new_distances_symetric[i, j] = I.distances[j, i] + ret.delta_1_opt[j, i] * (I.th[i] + I.th[j]) + ret.delta_2_opt[j, i] * (I.th[i] * I.th[j])
-
             end
         end
 
@@ -288,31 +276,27 @@ function solve_BPF_callback_cuts(I::Instance, model)
 
         ret = solve_subproblem(I, x_k, x_0_k)
 
-        println("Gap with lower Bound ", ((ret.obj -lower_bound)/lower_bound)*100)
+        #println("Gap with lower Bound ", ((ret.obj -lower_bound)/lower_bound)*100)
         
         if lower_bound >= ret.obj
             return
         end
 
         new_distances = zeros(n, n)
-        for i in 1:n
-            for j in 1:n
+        for i in 2:n
+            for j in 2:n
                 new_distances[i, j] = I.distances[i, j] + ret.delta_1_opt[i, j] * (I.th[i] + I.th[j]) + ret.delta_2_opt[i, j] * (I.th[i] * I.th[j])
             end
         end
 
-        new_distances_symetric = zeros(n, n)
-        for i in 1:n
-            for j in 1:n
-                new_distances_symetric[i, j] = I.distances[j, i] + ret.delta_1_opt[j, i] * (I.th[i] + I.th[j]) + ret.delta_2_opt[j, i] * (I.th[i] * I.th[j])
-            end
+        for j in 2:n
+            new_distances[1,j] = I.distances[1, j] + ret.delta_1_opt[1, j] *(I.th[1] + I.th[j]) + ret.delta_2_opt[1, j]*(I.th[1] * I.th[j])
         end
-
-        cut = @build_constraint(sum(new_distances[i, j] * model[:x][i, j] for i in 2:n, j in 2:n if i != j) + sum(new_distances[1,j]*model[:x_0][j] for j in 2:n) <= model[:z])
-        #cut2 = @build_constraint( sum(new_distances_symetric[i, j] * model[:x][i, j] for i in 1:n, j in 1:n if i != j) <= model[:z])
+        
+        cut = @build_constraint(sum(new_distances[i, j] * model[:x][i, j] for i in 2:n, j in 2:n if i != j) +
+                                             sum(new_distances[1,j]*model[:x_0][j] for j in 2:n) <= model[:z])
 
         MOI.submit(model, MOI.LazyConstraint(cb_data), cut)
-        #MOI.submit(model, MOI.LazyConstraint(cb_data), cut2)
     end
 
     set_attribute(
@@ -339,7 +323,7 @@ if termination_status(model) == MOI.OPTIMAL
     t_sol = value.(model[:t])
 
     solution_x = [(i, j) for i in 2:n, j in 2:n if value(x_sol[i, j]) > 0.5]
-    solution_x0 =  [(1,j) for j in 2:n if value(x0_sol[j]) > 0.5]
+    solution_x0 =  vcat([(1,j) for j in 2:n if value(x0_sol[j]) > 0.5], [(j,1) for j in 2:n if value(x0_sol[j]) > 1])
     println(solution_x, solution_x0)
     println("Les sommets peak sont: ", [i for i in 2:n if value(p_sol[i]) > 0.5])
     println("Les valeurs de t sont : ",[value(t_sol[i]) for i in 2:n])

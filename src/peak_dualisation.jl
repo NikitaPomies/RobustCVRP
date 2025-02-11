@@ -3,7 +3,7 @@ using JuMP, CPLEX, LinearAlgebra
 
 include("instance.jl")
 
-instance  = read_instance("../data/n_10-euclidean_true")
+instance  = read_instance("../data/n_30-euclidean_true")
 
 
 function build_peak_dual_model(I::Instance)
@@ -36,7 +36,7 @@ function build_peak_dual_model(I::Instance)
 
     #Contraintes sur X
             
-    @constraint(model, [i in 2:n], sum(x[:, i])+x_0[i] - p[i] == 1) 
+    @constraint(model, [i in 2:n], sum(x[:, i]) + x_0[i] - p[i] == 1) 
 
     @constraint(model, [i in 2:n], sum(x[i, :]) + p[i] == 1) 
 
