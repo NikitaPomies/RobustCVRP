@@ -1,13 +1,16 @@
 # Robust Capacitated Vehicle Routing Problem
 
-A Implementation of various methods to solve a RCVRP with travel times uncertainty. 
+An implementation of various methods to solve a RCVRP with travel times uncertainty. 
 
 We tested four different methods : 
-- Cutting planes
-- Dualization
+- [Cutting planes](https://github.com/NikitaPomies/RobustCVRP/tree/main/src/cutting_planes)
+- [Dualisation](https://github.com/NikitaPomies/RobustCVRP/tree/main/src/dualisation)
 - A Hybrid Genetic Search meta heuristic
-- Column generation
+- Column generation.
 
+For symmetric instances, we also tried a formulation from litterature that break symmetry, called [Peak Formulation](https://github.com/NikitaPomies/RobustCVRP/blob/main/src/peak_formulation).
+
+For development convenience, the metaheuristic code is in another repo : https://github.com/NikitaPomies/Robust-HGS-CVRP.
 
 ##  Description of the problem 
 The uncertainty set it described as follow : 
@@ -20,6 +23,8 @@ The uncertainty set it described as follow :
 ```math
 \sum_{(i,j)\in A} \delta_{ij}^1 \leq T  , \sum_{(i,j)\in A} \delta_{ij}^2 \leq T^{\,2}, \delta_{ij}^1 \in [0,1], \;  \delta_{ij}^2 \in [0,2] \;\forall (i,j) \in A \}
 ```
+<br>
+
 
 T and $\hat{t}$ are parameters of the problem 
 
