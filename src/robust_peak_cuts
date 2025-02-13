@@ -3,7 +3,7 @@ using JuMP, CPLEX, LinearAlgebra
 
 include("instance.jl")
 
-instance = read_instance("../data/n_9-euclidean_true")
+instance = read_instance("../data/n_12-euclidean_true")
 
 function selected_edges(x , x_0, n)
     c_to_c = Tuple{Int,Int}[(i,j) for i in 2:n, j in 2:n if x[i, j] > 0.5]
@@ -13,6 +13,17 @@ function selected_edges(x , x_0, n)
     #println(edges)
     #edges = vcat(edges, c_to_d)
     return edges
+end
+function is_symetric(distances::Matrix{Float64})
+    n = size(distances,1)
+    for i in 1:n
+        for j in 1:n
+            if distances[i,j] != distances[j,i] 
+                return false
+            end
+        end
+    end
+    return true
 end
 
 function fractional_knapsack(weights::Dict{Tuple{Int, Int}, Float64}, 
@@ -155,7 +166,7 @@ function build_BPF_cuts_model(I::Instance)
     @variable(model, t[i = 2:n]>=0, Int)  
 
     @variable(model, x_0[j = 2:n]>=0, Int)
-    @constraint(model,[j in 2:n], x_0[j] <=2)
+    @constraint(model,[j in 2:n], x_0[j] <=1)
    
     @variable(model, f[i=2:n, j=2:n]>=0, Int)
     
@@ -242,6 +253,7 @@ function solve_BPF_iterative_cuts(I::Instance, model)
                 new_distances[i, j] = I.distances[i, j] + ret.delta_1_opt[i, j] * (I.th[i] + I.th[j]) + ret.delta_2_opt[i, j] * (I.th[i] * I.th[j])
             end
         end
+        
 
         z = value.(model[:z])
         println("sum before : ", z - sum(new_distances[i, j] * x_k[i, j] for i in 2:n, j in 2:n if i != j) - sum(new_distances[1,j]*x_0_k[j] for j in 2:n))
@@ -267,9 +279,12 @@ function solve_BPF_callback_cuts(I::Instance, model)
             return
         end
 
+        
+
         x_k = callback_value.(cb_data, model[:x])
 
         x_0_k = callback_value.(cb_data, model[:x_0])
+
 
         lower_bound = callback_value.(cb_data, model[:z])
 
@@ -299,11 +314,17 @@ function solve_BPF_callback_cuts(I::Instance, model)
         for j in 2:n
             new_distances[1,j] = I.distances[1, j] + ret.delta_0_1_opt[j] *(I.th[1] + I.th[j]) + ret.delta_0_2_opt[j]*(I.th[1] * I.th[j])
         end
+
+        non_symetrique = 0
+        if !is_symetric(new_distances)
+            non_symetrique+=1
+        end
         
         cut = @build_constraint(sum(new_distances[i, j] * model[:x][i, j] for i in 2:n, j in 2:n if i != j) +
                                              sum((new_distances[1,j])*model[:x_0][j] for j in 2:n) <= model[:z])
 
         MOI.submit(model, MOI.LazyConstraint(cb_data), cut)
+        
     end
 
     set_attribute(
@@ -312,6 +333,7 @@ function solve_BPF_callback_cuts(I::Instance, model)
         cut_callback,
     )
     optimize!(model)
+    
     return model
 
 end

@@ -3,7 +3,7 @@ using JuMP, CPLEX, LinearAlgebra
 
 include("instance.jl")
 
-instance = read_instance("../data/n_7-euclidean_true")
+instance = read_instance("../data/n_6-euclidean_true")
 
 function flow_model(I::Instance)
 

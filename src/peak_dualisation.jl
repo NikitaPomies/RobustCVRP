@@ -3,7 +3,7 @@ using JuMP, CPLEX, LinearAlgebra
 
 include("instance.jl")
 
-instance  = read_instance("../data/n_9-euclidean_true")
+instance  = read_instance("../data/n_20-euclidean_true")
 
 
 function build_peak_dual_model(I::Instance)
@@ -114,8 +114,8 @@ function build_peak_dual_model_test(I::Instance)
     
     @variable(model, x[i=1:n, j=1:n]>=0, Int)  # Binary variable: 1 if arc (i, j) is used
     
-    @constraint(model,[j in 2:n], x[1,j] <=2)
-    @constraint(model,[j in 2:n], x[j,1] <=1)
+    @constraint(model,[j in 2:n], x[1,j] <=1)
+    @constraint(model,[j in 2:n], x[j,1] ==0)
     @constraint(model,[i = 2:n,j=2:n], x[i,j] <=1)
 
     @variable(model, p[i = 2:n], Bin)
