@@ -3,7 +3,7 @@ using JuMP, CPLEX, LinearAlgebra
 
 include("instance.jl")
 
-instance = read_instance("../data/n_8-euclidean_true")
+instance = read_instance("../data/n_11-euclidean_true")
 
 function selected_edges(x , x_0, n)
     c_to_c = Tuple{Int,Int}[(i,j) for i in 2:n, j in 2:n if x[i, j] > 0.5]
@@ -98,6 +98,7 @@ function solve_subproblem(I::Instance, x_bar, x_bar_0)
 
 end
 function solve_subproblem_solver(I::Instance, x_bar, x_bar_0)
+
     n = length(I.demands)
     m = Model(CPLEX.Optimizer)
     set_silent(m)
@@ -123,8 +124,8 @@ function solve_subproblem_solver(I::Instance, x_bar, x_bar_0)
     @constraint(m, [j in 2:n], delta_0_2[j] <= 2)
 
     @objective(m, Max, 
-    sum(x_bar[i,j]*(I.distances[i,j] + (I.th[i] + I.th[j])*delta_1[i,j] + delta_2[i,j]*I.th[i]*I.th[j]) for i in 2:n, j in 2:n) + 
-    sum(x_bar_0[j]*(I.distances[1,j] + (I.th[1]+I.th[j])*delta_0_1[j] + I.th[1]*I.th[j]*delta_0_2[j]) for j in 2:n) 
+    sum(x_bar[i,j]*(I.distances[i,j] + (I.th[i] + I.th[j])*delta_1[i,j] +  delta_2[i,j]*I.th[i]*I.th[j]) for i in 2:n, j in 2:n if i!=j) + 
+    sum(x_bar_0[j]*(I.distances[1,j] + (I.th[1] + I.th[j])*delta_0_1[j]   +  delta_0_2[j]*I.th[1]*I.th[j]) for j in 2:n) 
     )
 
     optimize!(m)
@@ -285,7 +286,9 @@ function solve_BPF_callback_cuts(I::Instance, model)
 
         for i in 2:n
             for j in 2:n
-                new_distances[i, j] = I.distances[i, j] + ret.delta_1_opt[i, j] * (I.th[i] + I.th[j]) + ret.delta_2_opt[i, j] * (I.th[i] * I.th[j])
+                if i !=j
+                    new_distances[i, j] = (I.distances[i, j] + ret.delta_1_opt[i, j] * (I.th[i] + I.th[j]) + ret.delta_2_opt[i, j] * (I.th[i] * I.th[j]))
+                end
             end
         end
         

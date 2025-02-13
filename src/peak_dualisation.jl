@@ -24,8 +24,12 @@ function build_peak_dual_model(I::Instance)
     @variable(model, p[i = 2:n], Bin)
     @variable(model, t[i = 2:n]>=0, Int)  
 
-    @variable(model, 0 <= mu_1[i=1:n, j=1:n])
-    @variable(model, 0 <= mu_2[i=1:n, j=1:n])
+    @variable(model, 0 <= mu_1[i=2:n, j=2:n])
+    @variable(model, 0 <= mu_2[i=2:n, j=2:n])
+
+    @variable(model, mu_0_1[j =2:n]>=0)
+    @variable(model, mu_0_2[j =2:n]>=0)
+
     @variable(model, lambda_1 >= 0)
     @variable(model, lambda_2 >= 0)
    
@@ -88,11 +92,11 @@ function build_peak_dual_model(I::Instance)
         end
     end
     for j in 2:n
-        @constraint(model, mu_1[1, j] + lambda_1 >= (I.th[1] + I.th[j]) * x_0[j])
-        @constraint(model, mu_2[1, j] + lambda_2 >= (I.th[1] * I.th[j]) * x_0[j])
+        @constraint(model, mu_0_1[j] + lambda_1 >= (I.th[1] + I.th[j]) * x_0[j])
+        @constraint(model, mu_0_2[j] + lambda_2 >= (I.th[1] * I.th[j]) * x_0[j])
     end
     
-    @objective(model, Min, sum(I.distances[i,j]*x[i,j] for i in 2:n, j in 2:n) + sum(x_0[j]*I.distances[1,j] for j in 2:n) + lambda_1 * I.T + lambda_2 * I.T^2 + sum(mu_1 + 2 * mu_2))
+    @objective(model, Min, sum(I.distances[i,j]*x[i,j] for i in 2:n, j in 2:n) + sum(x_0[j]*I.distances[1,j] for j in 2:n) + lambda_1 * I.T + lambda_2 * I.T^2 + sum(mu_1 + 2 * mu_2)+ sum(mu_0_1 + 2*mu_0_2))
 
     return model
 end
