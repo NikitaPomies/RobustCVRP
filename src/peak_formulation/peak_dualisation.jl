@@ -18,7 +18,7 @@ function build_peak_dual_model(I::Instance)
     
     @variable(model, x[i=2:n, j=2:n], Bin)  # Binary variable: 1 if arc (i, j) is used
     @variable(model, x_0[j = 2:n]>=0, Int)
-    @constraint(model,[j in 2:n], x_0[j] <=1)
+    @constraint(model,[j in 2:n], x_0[j] <=2)
    
 
     @variable(model, p[i = 2:n], Bin)
