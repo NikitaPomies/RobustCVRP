@@ -6,11 +6,13 @@ We tested four different methods :
 - [Cutting planes](https://github.com/NikitaPomies/RobustCVRP/tree/main/src/cutting_planes)
 - [Dualisation](https://github.com/NikitaPomies/RobustCVRP/tree/main/src/dualisation)
 - A Hybrid Genetic Search meta heuristic
-- Column generation.
+- [Column generation](https://github.com/NikitaPomies/RobustCVRP/tree/main/src/column_generation).
 
 For symmetric instances, we also tried a formulation from litterature that break symmetry, called [Peak Formulation](https://github.com/NikitaPomies/RobustCVRP/blob/main/src/peak_formulation).
 
 For development convenience, the metaheuristic code is in another repo : https://github.com/NikitaPomies/Robust-HGS-CVRP.
+
+A technical report (in French) presenting the results is available here.
 
 ##  Description of the problem 
 The uncertainty set it described as follow : 
