@@ -12,7 +12,7 @@ For symmetric instances, we also tried a formulation from litterature that break
 
 For development convenience, the metaheuristic code is in another repo : https://github.com/NikitaPomies/Robust-HGS-CVRP.
 
-A technical report (in French) presenting the results is available here.
+A technical report (in French) presenting the results is available [here](https://github.com/NikitaPomies/RobustCVRP/blob/main/Rapport_RCVRP.pdf): 
 
 ##  Description of the problem 
 The uncertainty set it described as follow : 
